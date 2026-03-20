@@ -7,12 +7,10 @@ services:
     name: sentiment-drl-api
     runtime: python
     plan: standard
-    region: singapore  # Chọn region gần Việt Nam
-    buildCommand: |
-      cd backend && pip install -r requirements.txt
-      python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
+    region: singapore
+    buildCommand: cd backend && pip install -r requirements.txt && python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
+    healthCheckPath: /api/v1/health
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
@@ -32,7 +30,7 @@ services:
       - key: MODEL_DIR
         value: /opt/render/project/src/models
       - key: CORS_ORIGINS
-        value: https://sentiment-drl-dashboard.onrender.com,https://*.vercel.app,http://localhost:3000
+        value: "https://sentiment-drl-dashboard.onrender.com,https://*.vercel.app,http://localhost:3000"
 
   # Frontend Static Site
   - type: web
@@ -46,13 +44,6 @@ services:
         value: 18.17.0
       - key: VITE_API_URL
         value: https://sentiment-drl-api.onrender.com/api/v1
-    routes:
-      - type: rewrite
-        source: /api/*
-        destination: https://sentiment-drl-api.onrender.com/api/*
-      - type: rewrite
-        source: /*
-        destination: /index.html
 
   # Celery Worker (Background Jobs)
   - type: worker
@@ -74,7 +65,7 @@ services:
           name: sentiment-redis
           property: connectionString
       - key: C_FORCE_ROOT
-        value: "true"  # Cho phép chạy Celery với root trong container
+        value: "true"
 
   # Celery Beat (Scheduler)
   - type: worker
@@ -96,16 +87,13 @@ services:
           name: sentiment-redis
           property: connectionString
 
-# PostgreSQL Database
 databases:
   - name: sentiment-db
     plan: starter
     region: singapore
-    ipAllowList: []  # Allow all (có thể restrict sau)
+    ipAllowList: []
 
-# Redis Instance
 redis:
   - name: sentiment-redis
     plan: starter
     region: singapore
-    maxmemoryPolicy: allkeys-lru  # Tự động xóa key cũ khi đầy
