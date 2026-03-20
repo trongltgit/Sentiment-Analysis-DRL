@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local data (sẽ dùng Render Disk hoặc download từ cloud)
+models/*.pt
+models/*.zip
+data/*.json
+data/*.csv
+
+# Frontend node_modules (build riêng)
+frontend/node_modules/
