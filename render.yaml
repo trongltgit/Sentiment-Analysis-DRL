@@ -1,3 +1,10 @@
+# Xóa file cũ
+rm render.yaml
+git add render.yaml
+git commit -m "Remove old render.yaml"
+
+# Tạo file mới với nội dung sạch
+cat > render.yaml << 'EOF'
 services:
   - type: web
     name: sentiment-drl-api
@@ -27,6 +34,7 @@ services:
         value: /opt/render/project/src/models
       - key: CORS_ORIGINS
         value: "https://sentiment-drl-dashboard.onrender.com,https://*.vercel.app,http://localhost:3000"
+
   - type: web
     name: sentiment-drl-dashboard
     runtime: static
@@ -38,6 +46,7 @@ services:
         value: "18.17.0"
       - key: VITE_API_URL
         value: "https://sentiment-drl-api.onrender.com/api/v1"
+
   - type: worker
     name: sentiment-drl-worker
     runtime: python
@@ -58,6 +67,7 @@ services:
           property: connectionString
       - key: C_FORCE_ROOT
         value: "true"
+
   - type: worker
     name: sentiment-drl-scheduler
     runtime: python
@@ -76,12 +86,19 @@ services:
           type: redis
           name: sentiment-redis
           property: connectionString
+
 databases:
   - name: sentiment-db
     plan: starter
     region: singapore
     ipAllowList: []
+
 redis:
-  - name: sentiment-drl-redis
+  - name: sentiment-redis
     plan: starter
     region: singapore
+EOF
+
+git add render.yaml
+git commit -m "Add clean render.yaml"
+git push origin main
