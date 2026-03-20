@@ -1,20 +1,32 @@
-# Build stage
-FROM node:18-alpine AS builder
+# Sử dụng Python 3.10 chính thức
+FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+# Cài system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY . .
-RUN npm run build
+# Copy requirements
+COPY backend/requirements.txt ./backend/
 
-# Production stage
-FROM nginx:alpine
+# Install Python dependencies
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Download NLTK data
+RUN python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
 
-EXPOSE 80
+# Copy backend code
+COPY backend/ ./backend/
 
-CMD ["nginx", "-g", "daemon off;"]
+# Set working directory
+WORKDIR /app/backend
+
+# Expose port
+EXPOSE 10000
+
+# Run
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10000"]
