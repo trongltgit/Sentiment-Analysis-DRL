@@ -82,6 +82,6 @@ databases:
     region: singapore
     ipAllowList: []
 redis:
-  - name: sentiment-redis
+  - name: sentiment-drl-redis
     plan: starter
     region: singapore
