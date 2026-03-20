@@ -1,8 +1,4 @@
-# Render Blueprint Configuration
-# https://render.com/docs/blueprint-spec
-
 services:
-  # Backend API Service
   - type: web
     name: sentiment-drl-api
     runtime: python
@@ -13,7 +9,7 @@ services:
     healthCheckPath: /api/v1/health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
+        value: "3.10.0"
       - key: DATABASE_URL
         fromDatabase:
           name: sentiment-db
@@ -26,13 +22,12 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
-        value: false
+        value: "false"
       - key: MODEL_DIR
         value: /opt/render/project/src/models
       - key: CORS_ORIGINS
         value: "https://sentiment-drl-dashboard.onrender.com,https://*.vercel.app,http://localhost:3000"
 
-  # Frontend Static Site
   - type: web
     name: sentiment-drl-dashboard
     runtime: static
@@ -41,11 +36,10 @@ services:
     staticPublishPath: ./frontend/dist
     envVars:
       - key: NODE_VERSION
-        value: 18.17.0
+        value: "18.17.0"
       - key: VITE_API_URL
-        value: https://sentiment-drl-api.onrender.com/api/v1
+        value: "https://sentiment-drl-api.onrender.com/api/v1"
 
-  # Celery Worker (Background Jobs)
   - type: worker
     name: sentiment-drl-worker
     runtime: python
@@ -54,7 +48,7 @@ services:
     startCommand: cd backend && celery -A app.celery_app worker --loglevel=info --concurrency=2
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
+        value: "3.10.0"
       - key: DATABASE_URL
         fromDatabase:
           name: sentiment-db
@@ -67,7 +61,6 @@ services:
       - key: C_FORCE_ROOT
         value: "true"
 
-  # Celery Beat (Scheduler)
   - type: worker
     name: sentiment-drl-scheduler
     runtime: python
@@ -76,7 +69,7 @@ services:
     startCommand: cd backend && celery -A app.celery_app beat --loglevel=info
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.0
+        value: "3.10.0"
       - key: DATABASE_URL
         fromDatabase:
           name: sentiment-db
