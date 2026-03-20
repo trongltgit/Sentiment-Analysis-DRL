@@ -1,0 +1,111 @@
+# Render Blueprint Configuration
+# https://render.com/docs/blueprint-spec
+
+services:
+  # Backend API Service
+  - type: web
+    name: sentiment-drl-api
+    runtime: python
+    plan: standard
+    region: singapore  # Chọn region gần Việt Nam
+    buildCommand: |
+      cd backend && pip install -r requirements.txt
+      python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sentiment-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: sentiment-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: false
+      - key: MODEL_DIR
+        value: /opt/render/project/src/models
+      - key: CORS_ORIGINS
+        value: https://sentiment-drl-dashboard.onrender.com,https://*.vercel.app,http://localhost:3000
+
+  # Frontend Static Site
+  - type: web
+    name: sentiment-drl-dashboard
+    runtime: static
+    plan: starter
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/dist
+    envVars:
+      - key: NODE_VERSION
+        value: 18.17.0
+      - key: VITE_API_URL
+        value: https://sentiment-drl-api.onrender.com/api/v1
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://sentiment-drl-api.onrender.com/api/*
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # Celery Worker (Background Jobs)
+  - type: worker
+    name: sentiment-drl-worker
+    runtime: python
+    plan: starter
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && celery -A app.celery_app worker --loglevel=info --concurrency=2
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sentiment-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: sentiment-redis
+          property: connectionString
+      - key: C_FORCE_ROOT
+        value: "true"  # Cho phép chạy Celery với root trong container
+
+  # Celery Beat (Scheduler)
+  - type: worker
+    name: sentiment-drl-scheduler
+    runtime: python
+    plan: starter
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && celery -A app.celery_app beat --loglevel=info
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sentiment-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: sentiment-redis
+          property: connectionString
+
+# PostgreSQL Database
+databases:
+  - name: sentiment-db
+    plan: starter
+    region: singapore
+    ipAllowList: []  # Allow all (có thể restrict sau)
+
+# Redis Instance
+redis:
+  - name: sentiment-redis
+    plan: starter
+    region: singapore
+    maxmemoryPolicy: allkeys-lru  # Tự động xóa key cũ khi đầy
