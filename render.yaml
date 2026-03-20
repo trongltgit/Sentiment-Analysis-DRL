@@ -1,10 +1,3 @@
-# Xóa file cũ
-rm render.yaml
-git add render.yaml
-git commit -m "Remove old render.yaml"
-
-# Tạo file mới với nội dung sạch
-cat > render.yaml << 'EOF'
 services:
   - type: web
     name: sentiment-drl-api
@@ -97,8 +90,3 @@ redis:
   - name: sentiment-redis
     plan: starter
     region: singapore
-EOF
-
-git add render.yaml
-git commit -m "Add clean render.yaml"
-git push origin main
