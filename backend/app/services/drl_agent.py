@@ -1,206 +1,250 @@
-"""
-Deep Reinforcement Learning Agent Service
-"""
 import torch
-import torch.nn.functional as F
-import torch.optim as optim
+import torch.nn as nn
 import numpy as np
-from typing import List, Dict, Tuple
-import asyncio
-from collections import defaultdict
+from typing import Dict, Any
+import random
+from transformers import AutoTokenizer, AutoModel
 
-from ..models.sentiment_model import DRLPolicyNetwork, CommentEnvironment
-from ..models.replay_buffer import PrioritizedReplayBuffer, MultiStepBuffer
-from ..config import settings
-
-
-class DRLAgentService:
+class DRLActionAgent:
     """
-    Service for DRL-based comment optimization and action selection
+    Deep Reinforcement Learning Agent cho Sentiment Analysis
+    Actions: prioritize, respond, highlight, filter, ignore
     """
     
-    def __init__(self):
+    ACTIONS = ["prioritize", "respond", "highlight", "filter", "ignore"]
+    
+    def __init__(self, model_path: str = None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        # Initialize networks
-        self.policy_net = DRLPolicyNetwork().to(self.device)
-        self.target_net = DRLPolicyNetwork().to(self.device)
-        self.target_net.load_state_dict(self.policy_net.state_dict())
+        # Load embedding model
+        self.tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
+        self.text_encoder = AutoModel.from_pretrained("vinai/phobert-base").to(self.device)
+        self.text_encoder.eval()
         
-        # Optimizer
-        self.optimizer = optim.Adam(
-            self.policy_net.parameters(), 
-            lr=settings.LEARNING_RATE
-        )
+        # Policy Network (Actor-Critic)
+        self.state_dim = 768 + 10  # embedding + features
+        self.action_dim = len(self.ACTIONS)
         
-        # Replay buffer
-        self.replay_buffer = PrioritizedReplayBuffer(
-            capacity=settings.BUFFER_SIZE
-        )
+        self.policy_net = self._build_network().to(self.device)
         
-        # Multi-step buffer
-        self.n_step_buffer = MultiStepBuffer(n_step=3)
+        # Load pretrained weights nếu có
+        if model_path:
+            self.policy_net.load_state_dict(torch.load(model_path, map_location=self.device))
         
-        # Training state
-        self.training_step = 0
-        self.episode_count = 0
+        self.policy_net.eval()
         
-        # Action mapping
-        self.actions = ["prioritize", "filter", "highlight", "respond", "ignore"]
+        # Response templates
+        self.response_templates = {
+            "negative_complaint": [
+                "Cảm ơn bạn đã chia sẻ. Chúng tôi rất tiếc về trải nghiệm này và sẽ cải thiện ngay.",
+                "Xin lỗi vì sự bất tiện. Đội ngũ CSKH sẽ liên hệ hỗ trợ bạn sớm nhất.",
+            ],
+            "positive_feedback": [
+                "Cảm ơn bạn rất nhiều! Chúng tôi rất vui khi nhận được phản hồi tích cực.",
+                "Cảm ơn sự ủng hộ của bạn! Hy vọng tiếp tục đồng hành cùng bạn.",
+            ],
+            "question": [
+                "Cảm ơn câu hỏi của bạn. Chúng tôi sẽ phản hồi chi tiết trong thời gian sớm nhất.",
+            ]
+        }
     
-    async def optimize_analysis(self, analyzed_comments: List[Dict]) -> List[Dict]:
-        """
-        Apply DRL optimization to analyzed comments
-        """
-        if len(analyzed_comments) == 0:
-            return []
-        
-        # Create environment
-        env = CommentEnvironment(analyzed_comments)
-        
-        optimized = []
-        state = env.reset()
-        done = False
-        
-        while not done:
-            # Get action from policy
-            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
-            action, confidence = self.policy_net.get_action(state_tensor)
-            
-            # Execute action
-            next_state, reward, done, info = env.step(action)
-            
-            # Store experience
-            self.replay_buffer.add(
-                state, action, reward, next_state, done
-            )
-            
-            # Apply action to comment
-            comment_idx = len(optimized)
-            comment = analyzed_comments[comment_idx].copy()
-            comment["drl_action"] = self.actions[action]
-            comment["action_confidence"] = confidence
-            comment["predicted_reward"] = reward
-            
-            # Add action-specific metadata
-            if action == 0:  # prioritize
-                comment["priority_score"] = comment.get("importance_score", 0.5) * 1.5
-            elif action == 1:  # filter
-                comment["filtered"] = True
-            elif action == 2:  # highlight
-                comment["highlighted"] = True
-            elif action == 3:  # respond
-                comment["requires_response"] = True
-            
-            optimized.append(comment)
-            state = next_state
-            
-            # Train if enough samples
-            if len(self.replay_buffer) > settings.BATCH_SIZE:
-                await self._train_step()
-        
-        # Sort by priority if applicable
-        optimized.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
-        
-        self.episode_count += 1
-        return optimized
+    def _build_network(self):
+        """Xây dựng Policy Network"""
+        return nn.Sequential(
+            nn.Linear(self.state_dim, 256),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, self.action_dim),
+            nn.Softmax(dim=-1)
+        )
     
-    async def _train_step(self):
-        """Single training step using Double DQN"""
-        # Sample from replay buffer
-        states, actions, rewards, next_states, dones, indices, weights = \
-            self.replay_buffer.sample(settings.BATCH_SIZE)
+    def _encode_text(self, text: str) -> torch.Tensor:
+        """Encode text thành vector"""
+        inputs = self.tokenizer(
+            text, 
+            return_tensors="pt", 
+            truncation=True, 
+            max_length=256,
+            padding=True
+        ).to(self.device)
         
-        states = states.to(self.device)
-        actions = actions.to(self.device)
-        rewards = rewards.to(self.device)
-        next_states = next_states.to(self.device)
-        dones = dones.to(self.device)
-        weights = weights.to(self.device)
-        
-        # Current Q values
-        current_action_probs, current_values, _ = self.policy_net(states)
-        current_q = current_action_probs.gather(1, actions.unsqueeze(1)).squeeze()
-        
-        # Target Q values (Double DQN)
         with torch.no_grad():
-            next_action_probs, _, _ = self.policy_net(next_states)
-            next_actions = next_action_probs.argmax(dim=1)
+            outputs = self.text_encoder(**inputs)
+            # Lấy [CLS] token embedding
+            embedding = outputs.last_hidden_state[:, 0, :]
+        
+        return embedding.squeeze()
+    
+    def _extract_features(self, sentiment: str, confidence: float, 
+                         likes: int, aspects: Dict) -> torch.Tensor:
+        """Trích xuất đặc trưng số"""
+        features = []
+        
+        # Sentiment one-hot
+        sentiment_map = {"positive": [1, 0, 0], "neutral": [0, 1, 0], "negative": [0, 0, 1]}
+        features.extend(sentiment_map.get(sentiment, [0, 1, 0]))
+        
+        # Confidence
+        features.append(confidence)
+        
+        # Likes (normalized)
+        features.append(min(likes / 1000, 1.0))
+        
+        # Aspect scores
+        aspect_positive = sum(1 for a in aspects.values() if a.get("dominant") == "positive")
+        aspect_negative = sum(1 for a in aspects.values() if a.get("dominant") == "negative")
+        features.extend([
+            aspect_positive / max(len(aspects), 1),
+            aspect_negative / max(len(aspects), 1),
+            len(aspects) / 10  # normalized
+        ])
+        
+        # Urgency indicators
+        urgent_words = ["gấp", "khẩn", "ngay", "lỗi", "hỏng", "khiếu nại", "tệ"]
+        text_lower = str(aspects).lower()
+        urgency_score = sum(1 for word in urgent_words if word in text_lower) / len(urgent_words)
+        features.append(urgency_score)
+        
+        return torch.tensor(features, dtype=torch.float32).to(self.device)
+    
+    def predict_action(self, comment_text: str, sentiment: str, 
+                       confidence: float, likes: int, aspects: Dict) -> Dict[str, Any]:
+        """Dự đoán hành động tối ưu cho bình luận"""
+        
+        # Encode state
+        text_embedding = self._encode_text(comment_text)
+        features = self._extract_features(sentiment, confidence, likes, aspects)
+        state = torch.cat([text_embedding, features])
+        
+        # Get action probabilities
+        with torch.no_grad():
+            action_probs = self.policy_net(state.unsqueeze(0))
+            action_idx = torch.argmax(action_probs).item()
+            action_confidence = action_probs[0][action_idx].item()
+        
+        action = self.ACTIONS[action_idx]
+        
+        # Tính importance score
+        importance_score = self._calculate_importance(
+            sentiment, confidence, likes, action
+        )
+        
+        # Generate suggested response nếu cần
+        suggested_response = None
+        if action in ["respond", "prioritize"]:
+            suggested_response = self._generate_response(comment_text, sentiment, aspects)
+        
+        return {
+            "action": action,
+            "confidence": action_confidence,
+            "importance_score": importance_score,
+            "requires_action": action in ["prioritize", "respond"],
+            "action_probs": {a: p for a, p in zip(self.ACTIONS, action_probs[0].tolist())},
+            "suggested_response": suggested_response
+        }
+    
+    def _calculate_importance(self, sentiment: str, confidence: float, 
+                              likes: int, action: str) -> float:
+        """Tính điểm quan trọng của bình luận"""
+        score = 0.0
+        
+        # Sentiment weight
+        if sentiment == "negative":
+            score += 0.4
+        elif sentiment == "positive":
+            score += 0.2
+        
+        # Confidence weight
+        score += confidence * 0.2
+        
+        # Engagement weight
+        score += min(likes / 100, 0.2)
+        
+        # Action weight
+        action_weights = {
+            "prioritize": 1.0,
+            "respond": 0.8,
+            "highlight": 0.6,
+            "filter": 0.3,
+            "ignore": 0.1
+        }
+        score += action_weights.get(action, 0.1) * 0.2
+        
+        return min(score, 1.0)
+    
+    def _generate_response(self, text: str, sentiment: str, aspects: Dict) -> str:
+        """Tạo gợi ý phản hồi dựa trên context"""
+        text_lower = text.lower()
+        
+        # Xác định loại phản hồi
+        if sentiment == "negative":
+            if any(word in text_lower for word in ["lỗi", "hỏng", "kém", "tệ"]):
+                return random.choice(self.response_templates["negative_complaint"])
+        
+        elif sentiment == "positive":
+            return random.choice(self.response_templates["positive_feedback"])
+        
+        elif "?" in text or "hỏi" in text_lower:
+            return random.choice(self.response_templates["question"])
+        
+        return "Cảm ơn bạn đã chia sẻ ý kiến!"
+    
+    def train_step(self, state, action, reward, next_state, done):
+        """Training step cho DRL (sử dụng PPO hoặc DQN)"""
+        # Implementation cho việc training online learning
+        pass
+
+class PPOTrainer:
+    """Proximal Policy Optimization cho training DRL Agent"""
+    
+    def __init__(self, agent: DRLActionAgent):
+        self.agent = agent
+        self.optimizer = torch.optim.Adam(agent.policy_net.parameters(), lr=3e-4)
+        self.gamma = 0.99  # discount factor
+        self.epsilon = 0.2  # PPO clip parameter
+        
+    def compute_advantages(self, rewards, values, dones):
+        """Tính advantage function"""
+        advantages = []
+        gae = 0
+        
+        for t in reversed(range(len(rewards))):
+            if t == len(rewards) - 1:
+                next_value = 0
+            else:
+                next_value = values[t + 1]
             
-            target_action_probs, target_values, _ = self.target_net(next_states)
-            next_q = target_action_probs.gather(1, next_actions.unsqueeze(1)).squeeze()
-            
-            target_q = rewards + (1 - dones) * settings.GAMMA * next_q
+            delta = rewards[t] + self.gamma * next_value * (1 - dones[t]) - values[t]
+            gae = delta + self.gamma * 0.95 * (1 - dones[t]) * gae
+            advantages.insert(0, gae)
         
-        # TD errors for priority update
-        td_errors = torch.abs(current_q - target_q).detach().cpu().numpy()
+        return torch.tensor(advantages)
+    
+    def update_policy(self, states, actions, old_probs, advantages, returns):
+        """Cập nhật policy network"""
+        # Forward pass
+        new_probs = self.agent.policy_net(states)
+        dist = torch.distributions.Categorical(new_probs)
         
-        # Weighted MSE loss
-        loss = (weights * F.mse_loss(current_q, target_q, reduction='none')).mean()
+        # Ratio for PPO
+        ratio = torch.exp(dist.log_prob(actions) - old_probs)
         
-        # Optimize
+        # Clipped surrogate objective
+        surr1 = ratio * advantages
+        surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages
+        actor_loss = -torch.min(surr1, surr2).mean()
+        
+        # Critic loss (value function)
+        # ... implementation
+        
+        # Total loss
+        loss = actor_loss
+        
+        # Backprop
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
         self.optimizer.step()
         
-        # Update priorities
-        self.replay_buffer.update_priorities(indices, td_errors)
-        
-        # Update target network
-        self.training_step += 1
-        if self.training_step % settings.TARGET_UPDATE_FREQ == 0:
-            self.target_net.load_state_dict(self.policy_net.state_dict())
-    
-    async def process_feedback(self, feedback: Dict):
-        """
-        Process user feedback to improve agent (online learning)
-        """
-        analysis_id = feedback.get("analysis_id")
-        rating = feedback.get("user_rating", 3)
-        corrections = feedback.get("corrections", {})
-        
-        # Convert rating to reward signal
-        reward_signal = (rating - 3) / 2.0  # Normalize to [-1, 1]
-        
-        # Adjust recent experiences based on feedback
-        # This is a simplified version - full implementation would track
-        # which experiences correspond to which analysis
-        
-        # Save model checkpoint
-        if self.episode_count % 10 == 0:
-            await self._save_checkpoint()
-    
-    async def _save_checkpoint(self):
-        """Save model checkpoint"""
-        checkpoint = {
-            'policy_state_dict': self.policy_net.state_dict(),
-            'target_state_dict': self.target_net.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'training_step': self.training_step,
-            'episode_count': self.episode_count
-        }
-        torch.save(checkpoint, settings.DRL_MODEL_PATH)
-    
-    async def load_checkpoint(self):
-        """Load model checkpoint"""
-        try:
-            checkpoint = torch.load(settings.DRL_MODEL_PATH, map_location=self.device)
-            self.policy_net.load_state_dict(checkpoint['policy_state_dict'])
-            self.target_net.load_state_dict(checkpoint['target_state_dict'])
-            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            self.training_step = checkpoint.get('training_step', 0)
-            self.episode_count = checkpoint.get('episode_count', 0)
-        except FileNotFoundError:
-            print("No checkpoint found, starting from scratch")
-    
-    def get_action_explanation(self, action: int, comment: Dict) -> str:
-        """Generate human-readable explanation for action"""
-        explanations = {
-            0: f"Ưu tiên xử lý vì độ quan trọng cao ({comment.get('importance_score', 0):.2f})",
-            1: "Lọc bỏ do chất lượng thấp hoặc spam",
-            2: "Đánh dấu nổi bật vì phản hồi tích cực giá trị",
-            3: "Cần phản hồi ngay do nội dung tiêu cực/khiếu nại",
-            4: "Bỏ qua vì nội dung trung lập và không quan trọng"
-        }
-        return explanations.get(action, "Không xác định")
+        return loss.item()
