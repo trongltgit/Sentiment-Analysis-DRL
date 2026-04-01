@@ -3,20 +3,16 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Copy package files và cài dependencies
+# Copy package files trước để cache
 COPY frontend/package*.json ./
 RUN npm install --no-audit --no-fund --prefer-offline
 
-# Copy toàn bộ code frontend
+# Copy toàn bộ source frontend
 COPY frontend/ ./
 
-# Debug files
-RUN echo "=== Files in /app ===" && ls -la
-
-# Tạo index.html nếu chưa có (dự án của bạn đang thiếu)
-RUN if [ ! -f index.html ]; then \
-      echo "Creating index.html for Vite..."; \
-      cat > index.html << 'EOT'
+# Tạo index.html (vì repo của bạn chưa có file này)
+RUN echo "Creating index.html..." && \
+    cat > index.html << 'EOT'
 <!DOCTYPE html>
 <html lang="vi">
   <head>
@@ -35,22 +31,24 @@ RUN if [ ! -f index.html ]; then \
   </body>
 </html>
 EOT
-      echo "✅ index.html đã được tạo"; \
-    fi
+
+RUN echo "✅ index.html đã được tạo"
 
 # Build production
 RUN npm run build
 
-# Kiểm tra build
+# Kiểm tra kết quả
 RUN echo "=== Build result ===" && ls -la dist
 
-# ==================== STAGE 2: Production ====================
+# ==================== STAGE 2: Nginx Production ====================
 FROM nginx:alpine
 
-# Copy build output từ stage 1
+# Copy build output
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+
+# Copy nginx config (bạn đã có file này trong frontend/)
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
-# Start Nginx
 CMD ["nginx", "-g", "daemon off;"]
