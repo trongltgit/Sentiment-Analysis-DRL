@@ -1,28 +1,34 @@
 version: '3.8'
 
 services:
-  api:
-    build: ./backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=postgresql://postgres:password@db:5432/sentiment_db
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
-    depends_on:
-      - redis
-      - db
+      - ./backend/app:/app
+      - model-cache:/root/.cache
     networks:
       - sentiment-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
-      - "3000:80"
+      - "80:80"
     depends_on:
-      - api
+      - backend
     networks:
       - sentiment-network
 
@@ -33,31 +39,8 @@ services:
     networks:
       - sentiment-network
 
-  db:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=sentiment_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - sentiment-network
-
-  worker:
-    build: ./backend
-    command: celery -A app.celery worker --loglevel=info
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DATABASE_URL=postgresql://postgres:password@db:5432/sentiment_db
-    depends_on:
-      - redis
-      - db
-    networks:
-      - sentiment-network
-
 volumes:
-  postgres_data:
+  model-cache:
 
 networks:
   sentiment-network:
