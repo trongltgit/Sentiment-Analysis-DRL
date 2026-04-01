@@ -22,28 +22,30 @@ const AnalysisDashboard = () => {
   useEffect(() => {
     const fetchAnalysis = async () => {
       try {
-        // Sử dụng biến môi trường hoặc fallback về /api (sẽ proxy qua nginx sau)
-        const baseURL = import.meta.env.VITE_API_URL 
-          ? `${import.meta.env.VITE_API_URL}/api/v1/analysis/${id}`
-          : `/api/v1/analysis/${id}`;
+        // Ưu tiên dùng VITE_API_URL (khi deploy backend)
+        // Nếu không có, fallback về /api/ (sẽ proxy qua Nginx sau này)
+        const apiBase = import.meta.env.VITE_API_URL 
+          ? `${import.meta.env.VITE_API_URL}/api/v1`
+          : '/api/v1';
 
-        const response = await axios.get(baseURL);
-        
+        const response = await axios.get(`${apiBase}/analysis/${id}`);
+
         setAnalysis(response.data);
        
+        // Dừng polling khi đã hoàn thành hoặc thất bại
         if (response.data.status === 'completed' || response.data.status === 'failed') {
           setPolling(false);
         }
       } catch (error) {
-        console.error("Lỗi tải dữ liệu phân tích:", error);
-        
-        // Nếu chưa có backend, hiển thị thông báo thân thiện
-        if (!import.meta.env.VITE_API_URL) {
-          toast.error('Backend chưa được kết nối. Đang hiển thị chế độ demo.');
+        console.error("Lỗi gọi API:", error);
+
+        // Xử lý lỗi thân thiện
+        if (error.code === 'ERR_NETWORK' || error.message.includes('localhost')) {
+          toast.error('Không kết nối được với Backend. Vui lòng deploy backend!');
         } else {
           toast.error('Không thể tải dữ liệu phân tích');
         }
-        
+
         setPolling(false);
       } finally {
         setLoading(false);
@@ -51,8 +53,8 @@ const AnalysisDashboard = () => {
     };
 
     fetchAnalysis();
-   
-    // Polling chỉ chạy nếu đang ở trạng thái pending/processing
+
+    // Polling mỗi 3 giây nếu vẫn đang xử lý
     if (polling) {
       const interval = setInterval(fetchAnalysis, 3000);
       return () => clearInterval(interval);
@@ -69,9 +71,9 @@ const AnalysisDashboard = () => {
 
   if (!analysis) {
     return (
-      <div className="text-center py-20">
-        <AlertCircle size={48} className="mx-auto text-red-400 mb-4" />
-        <p className="text-gray-400">Không tìm thấy dữ liệu phân tích</p>
+      <div className="text-center py-20 text-gray-400">
+        <AlertCircle size={48} className="mx-auto mb-4 text-red-400" />
+        <p>Không tìm thấy kết quả phân tích hoặc backend chưa kết nối.</p>
       </div>
     );
   }
@@ -193,7 +195,7 @@ const AnalysisDashboard = () => {
                       >
                         #{topic}
                       </span>
-                    )) || <p className="text-gray-500">Không có chủ đề chính</p>}
+                    )) || <p className="text-gray-500 italic">Không có dữ liệu chủ đề</p>}
                   </div>
                 </div>
 
@@ -215,14 +217,11 @@ const AnalysisDashboard = () => {
                   <div className="text-sm text-gray-400 mb-2">Đề xuất hành động</div>
                   <ul className="space-y-2">
                     {analysis.summary.recommendations?.map((rec, idx) => (
-                      <li
-                        key={idx}
-                        className="flex items-start gap-2 text-sm"
-                      >
+                      <li key={idx} className="flex items-start gap-2 text-sm">
                         <span className="text-cyan-400 mt-1">➤</span>
                         {rec}
                       </li>
-                    )) || <p className="text-gray-500">Không có đề xuất</p>}
+                    )) || <p className="text-gray-500 italic">Không có đề xuất</p>}
                   </ul>
                 </div>
               </div>
