@@ -7,25 +7,28 @@ FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Copy dependencies trước để cache layer
+# Copy dependencies
 COPY frontend/package*.json ./
 
-# Cài dependencies (bỏ qua audit, dùng --legacy-peer-deps để tránh conflict)
+# Cài dependencies
 RUN npm install --legacy-peer-deps --no-audit --progress=false
 
-# Copy toàn bộ source code
-COPY frontend/ ./
+# Copy toàn bộ source từ frontend (đúng cách)
+COPY frontend/index.html ./
+COPY frontend/vite.config.js ./
+COPY frontend/src ./src/
+COPY frontend/public ./public/ 2>/dev/null || true
 
-# Build production (bỏ qua type checking nếu có lỗi TS)
-RUN npm run build 2>&1 || (echo "Build warning/error occurred but continuing..." && exit 0)
+# Build production
+RUN npm run build
 
 # Stage 2: Nginx Server
 FROM nginx:alpine
 
-# Copy build output từ stage 1
+# Copy build output
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
-# Tạo nginx.conf inline (không cần file riêng)
+# Tạo nginx.conf inline
 RUN echo 'server { \
     listen 80; \
     server_name localhost; \
@@ -33,10 +36,6 @@ RUN echo 'server { \
     index index.html; \
     location / { \
         try_files $uri $uri/ /index.html; \
-    } \
-    error_page 500 502 503 504 /50x.html; \
-    location = /50x.html { \
-        root /usr/share/nginx/html; \
     } \
 }' > /etc/nginx/conf.d/default.conf
 
