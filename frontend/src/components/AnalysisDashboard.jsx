@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
-  TrendingUp, 
-  AlertCircle, 
-  CheckCircle, 
+import {
+  TrendingUp,
+  AlertCircle,
+  CheckCircle,
   Clock,
-  MessageCircle,
   BrainCircuit
 } from 'lucide-react';
 import axios from 'axios';
@@ -23,14 +22,28 @@ const AnalysisDashboard = () => {
   useEffect(() => {
     const fetchAnalysis = async () => {
       try {
-        const response = await axios.get(`http://localhost:8000/api/v1/analysis/${id}`);
-        setAnalysis(response.data);
+        // Sử dụng biến môi trường hoặc fallback về /api (sẽ proxy qua nginx sau)
+        const baseURL = import.meta.env.VITE_API_URL 
+          ? `${import.meta.env.VITE_API_URL}/api/v1/analysis/${id}`
+          : `/api/v1/analysis/${id}`;
+
+        const response = await axios.get(baseURL);
         
+        setAnalysis(response.data);
+       
         if (response.data.status === 'completed' || response.data.status === 'failed') {
           setPolling(false);
         }
       } catch (error) {
-        toast.error('Không thể tải dữ liệu phân tích');
+        console.error("Lỗi tải dữ liệu phân tích:", error);
+        
+        // Nếu chưa có backend, hiển thị thông báo thân thiện
+        if (!import.meta.env.VITE_API_URL) {
+          toast.error('Backend chưa được kết nối. Đang hiển thị chế độ demo.');
+        } else {
+          toast.error('Không thể tải dữ liệu phân tích');
+        }
+        
         setPolling(false);
       } finally {
         setLoading(false);
@@ -38,7 +51,8 @@ const AnalysisDashboard = () => {
     };
 
     fetchAnalysis();
-    
+   
+    // Polling chỉ chạy nếu đang ở trạng thái pending/processing
     if (polling) {
       const interval = setInterval(fetchAnalysis, 3000);
       return () => clearInterval(interval);
@@ -53,7 +67,14 @@ const AnalysisDashboard = () => {
     );
   }
 
-  if (!analysis) return null;
+  if (!analysis) {
+    return (
+      <div className="text-center py-20">
+        <AlertCircle size={48} className="mx-auto text-red-400 mb-4" />
+        <p className="text-gray-400">Không tìm thấy dữ liệu phân tích</p>
+      </div>
+    );
+  }
 
   const getStatusColor = (status) => {
     const colors = {
@@ -77,7 +98,7 @@ const AnalysisDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         className="bg-white/5 border border-white/10 rounded-2xl p-6"
@@ -92,7 +113,7 @@ const AnalysisDashboard = () => {
             <span className="font-semibold capitalize">{analysis.status}</span>
           </div>
         </div>
-        
+       
         {analysis.processing_time && (
           <div className="mt-4 flex items-center gap-4 text-sm text-gray-400">
             <span>⏱️ Thời gian xử lý: {analysis.processing_time.toFixed(2)}s</span>
@@ -106,27 +127,27 @@ const AnalysisDashboard = () => {
           {/* Stats Grid */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {[
-              { 
-                label: 'Tích cực', 
-                value: analysis.summary.sentiment_distribution.positive || 0,
+              {
+                label: 'Tích cực',
+                value: analysis.summary.sentiment_distribution?.positive || 0,
                 color: 'from-green-500 to-emerald-600',
                 icon: '😊'
               },
-              { 
-                label: 'Trung lập', 
-                value: analysis.summary.sentiment_distribution.neutral || 0,
+              {
+                label: 'Trung lập',
+                value: analysis.summary.sentiment_distribution?.neutral || 0,
                 color: 'from-gray-500 to-slate-600',
                 icon: '😐'
               },
-              { 
-                label: 'Tiêu cực', 
-                value: analysis.summary.sentiment_distribution.negative || 0,
+              {
+                label: 'Tiêu cực',
+                value: analysis.summary.sentiment_distribution?.negative || 0,
                 color: 'from-red-500 to-rose-600',
                 icon: '😠'
               },
-              { 
-                label: 'Độ tin cậy TB', 
-                value: `${(analysis.summary.average_confidence * 100).toFixed(1)}%`,
+              {
+                label: 'Độ tin cậy TB',
+                value: `${(analysis.summary.average_confidence * 100 || 0).toFixed(1)}%`,
                 color: 'from-cyan-500 to-blue-600',
                 icon: '🎯'
               }
@@ -147,11 +168,11 @@ const AnalysisDashboard = () => {
 
           {/* Charts & Insights */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <SentimentChart 
-              distribution={analysis.summary.sentiment_distribution} 
+            <SentimentChart
+              distribution={analysis.summary.sentiment_distribution}
             />
-            
-            <motion.div 
+           
+            <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               className="bg-white/5 border border-white/10 rounded-2xl p-6"
@@ -160,23 +181,23 @@ const AnalysisDashboard = () => {
                 <TrendingUp className="text-cyan-400" />
                 Phân tích xu hướng
               </h3>
-              
+             
               <div className="space-y-4">
                 <div>
                   <div className="text-sm text-gray-400 mb-1">Chủ đề chính</div>
                   <div className="flex flex-wrap gap-2">
-                    {analysis.summary.key_topics.map((topic, idx) => (
-                      <span 
+                    {analysis.summary.key_topics?.map((topic, idx) => (
+                      <span
                         key={idx}
                         className="px-3 py-1 bg-cyan-500/20 text-cyan-400 rounded-full text-sm"
                       >
                         #{topic}
                       </span>
-                    ))}
+                    )) || <p className="text-gray-500">Không có chủ đề chính</p>}
                   </div>
                 </div>
 
-                {analysis.summary.risk_factors.length > 0 && (
+                {analysis.summary.risk_factors?.length > 0 && (
                   <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
                     <div className="text-red-400 font-semibold mb-2 flex items-center gap-2">
                       <AlertCircle size={16} />
@@ -193,15 +214,15 @@ const AnalysisDashboard = () => {
                 <div>
                   <div className="text-sm text-gray-400 mb-2">Đề xuất hành động</div>
                   <ul className="space-y-2">
-                    {analysis.summary.recommendations.map((rec, idx) => (
-                      <li 
+                    {analysis.summary.recommendations?.map((rec, idx) => (
+                      <li
                         key={idx}
                         className="flex items-start gap-2 text-sm"
                       >
                         <span className="text-cyan-400 mt-1">➤</span>
                         {rec}
                       </li>
-                    ))}
+                    )) || <p className="text-gray-500">Không có đề xuất</p>}
                   </ul>
                 </div>
               </div>
