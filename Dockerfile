@@ -1,19 +1,45 @@
-# Dockerfile ở ROOT của repo
-# Stage 1: Build frontend
+# ==========================================
+# Dockerfile - Đặt ở ROOT của repo
+# ==========================================
+
+# Stage 1: Build React App
 FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Copy từ thư mục frontend/
+# Copy dependencies
 COPY frontend/package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
+# Cài dependencies (bỏ qua audit để nhanh hơn)
+RUN npm install --legacy-peer-deps --no-audit
+
+# Copy source code
 COPY frontend/ ./
+
+# Build production
 RUN npm run build
 
-# Stage 2: Production
+# Stage 2: Nginx Server
 FROM nginx:alpine
+
+# Copy build output
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Tạo nginx.conf inline (không cần file riêng)
+RUN echo 'server { \
+    listen 80; \
+    server_name localhost; \
+    root /usr/share/nginx/html; \
+    index index.html; \
+    location / { \
+        try_files $uri $uri/ /index.html; \
+    } \
+    error_page 500 502 503 504 /50x.html; \
+    location = /50x.html { \
+        root /usr/share/nginx/html; \
+    } \
+}' > /etc/nginx/conf.d/default.conf
+
 EXPOSE 80
+
 CMD ["nginx", "-g", "daemon off;"]
