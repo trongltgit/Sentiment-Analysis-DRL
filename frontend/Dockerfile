@@ -3,14 +3,14 @@ FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Copy package files từ thư mục hiện tại
-COPY package*.json ./
+# Copy từ thư mục frontend (vì context là root)
+COPY frontend/package*.json ./
 
 # Cài dependencies
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-# Copy toàn bộ source
-COPY . .
+# Copy toàn bộ source từ frontend/
+COPY frontend/ .
 
 # Build
 RUN npm run build
@@ -21,11 +21,9 @@ FROM nginx:alpine
 # Copy build output
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx config từ frontend/
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose port
 EXPOSE 80
 
-# Start nginx
 CMD ["nginx", "-g", "daemon off;"]
