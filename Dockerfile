@@ -1,41 +1,20 @@
-# ==========================================
-# Dockerfile - Đặt ở ROOT của repo
-# ==========================================
-
-# Stage 1: Build React App
-FROM node:18-alpine AS frontend-builder
-
+# ==================== STAGE 1: Build Frontend ====================
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
-# Copy package.json
+# Copy package files trước để cache tốt hơn
 COPY frontend/package*.json ./
 
-# Cài dependencies
-RUN npm install --legacy-peer-deps --no-audit --progress=false
+# Cài dependencies (dùng ci để ổn định hơn)
+RUN npm ci
 
-# Copy toàn bộ frontend (bao gồm cả index.html, vite.config.js, src/)
+# Copy toàn bộ source frontend (bao gồm index.html, vite.config, src, ...)
 COPY frontend/ ./
+
+# Debug: kiểm tra xem index.html có thực sự được copy không
+RUN ls -la
+RUN ls -la /app || echo "Không tìm thấy thư mục /app"
+RUN find /app -name "index.html" || echo "Không tìm thấy index.html"
 
 # Build production
 RUN npm run build
-
-# Stage 2: Nginx Server
-FROM nginx:alpine
-
-# Copy build output
-COPY --from=frontend-builder /app/dist /usr/share/nginx/html
-
-# Tạo nginx.conf inline
-RUN echo 'server { \
-    listen 80; \
-    server_name localhost; \
-    root /usr/share/nginx/html; \
-    index index.html; \
-    location / { \
-        try_files $uri $uri/ /index.html; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
