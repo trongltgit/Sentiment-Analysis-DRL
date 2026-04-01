@@ -1,39 +1,26 @@
-# ===== STAGE 1: Build Frontend =====
+# Stage 1: Build frontend
 FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm ci
-COPY frontend/ .
+
+# Copy package files
+COPY package.json package-lock.json* ./
+
+# Cài dependencies (dùng npm install nếu chưa có package-lock.json)
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+# Copy source code
+COPY . .
+
+# Build
 RUN npm run build
 
-# ===== STAGE 2: Backend + Serve Frontend =====
-FROM python:3.10-slim
+# Stage 2: Production
+FROM nginx:alpine
 
-WORKDIR /app
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# System deps
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+EXPOSE 80
 
-# Python deps
-COPY backend/requirements.txt ./backend/
-RUN pip install --no-cache-dir -r backend/requirements.txt
-RUN python -c "import nltk; nltk.download('punkt'); nltk.download('stopwords')"
-
-# Copy backend code
-COPY backend/ ./backend/
-
-# Copy built frontend từ stage 1
-COPY --from=frontend-builder /app/frontend/dist ./backend/static/
-
-WORKDIR /app/backend
-
-# Port
-EXPOSE 10000
-
-# Run
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10000"]
+CMD ["nginx", "-g", "daemon off;"]
