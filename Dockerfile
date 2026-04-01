@@ -7,17 +7,14 @@ FROM node:18-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Copy dependencies
+# Copy package.json trước
 COPY frontend/package*.json ./
 
 # Cài dependencies
 RUN npm install --legacy-peer-deps --no-audit --progress=false
 
-# Copy toàn bộ source từ frontend (đúng cách)
-COPY frontend/index.html ./
-COPY frontend/vite.config.js ./
-COPY frontend/src ./src/
-COPY frontend/public ./public/ 2>/dev/null || true
+# Copy toàn bộ frontend (dùng .dockerignore để loại trừ node_modules)
+COPY frontend/ ./
 
 # Build production
 RUN npm run build
