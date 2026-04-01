@@ -9,22 +9,27 @@ COPY frontend/package*.json ./
 # Cài dependencies
 RUN npm install --no-audit --no-fund --prefer-offline
 
-# Copy toàn bộ frontend code
+# Copy toàn bộ code frontend
 COPY frontend/ ./
 
-# Debug: xem file có gì
+# Debug files
 RUN echo "=== Files in /app ===" && ls -la
 
-# Tạo index.html nếu chưa có (dự án của bạn đang thiếu file này)
+# Tạo index.html nếu chưa có (rất quan trọng vì repo của bạn đang thiếu file này)
 RUN if [ ! -f index.html ]; then \
       echo "Creating index.html..."; \
-      cat > index.html << 'EOF'
+      cat > index.html << 'EOF' && \
+      echo "✅ index.html đã được tạo"; \
+    else \
+      echo "✅ index.html đã tồn tại"; \
+    fi
+
 <!DOCTYPE html>
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sentiment Analysis DRL</title>
+    <title>Sentiment Analysis</title>
   </head>
   <body>
     <div id="root"></div>
@@ -32,13 +37,9 @@ RUN if [ ! -f index.html ]; then \
   </body>
 </html>
 EOF
-      echo "✅ index.html đã được tạo";
-    else
-      echo "✅ index.html đã tồn tại";
-    fi
 
 # Build production
 RUN npm run build
 
-# Kiểm tra kết quả build
-RUN echo "=== Build result ===" && ls -la dist || echo "❌ Không có thư mục dist"
+# Kiểm tra kết quả
+RUN echo "=== Build result ===" && ls -la dist || echo "❌ Không tìm thấy thư mục dist"
