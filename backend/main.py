@@ -97,4 +97,22 @@ async def process_analysis(job_id: str, request: AnalyzeRequest):
             },
             "comments": [
                 {"text": "Sản phẩm tuyệt vời!", "sentiment": "positive", "confidence": 0.95},
-                {"text": "Giao hàng chậm", "sentiment": "negative", "confidence
+                {"text": "Giao hàng chậm", "sentiment": "negative", "confidence": 0.87},
+            ]
+        })
+        print(f"✅ Hoàn thành: {job_id}")
+        
+    except Exception as e:
+        print(f"❌ Lỗi: {e}")
+        job["status"] = "failed"
+        job["error"] = str(e)
+
+@app.get("/api/v1/analysis/{job_id}", response_model=AnalysisResponse)
+def get_analysis(job_id: str):
+    if job_id not in analysis_jobs:
+        raise HTTPException(status_code=404, detail="Not found")
+    return AnalysisResponse(**analysis_jobs[job_id])
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
