@@ -8,26 +8,20 @@ from typing import List, Optional
 import uuid
 import os
 from datetime import datetime
+import asyncio
 
 app = FastAPI(title="AI Sentiment Analysis DRL")
 
-# 🔴 SỬA: CORS cho phép tất cả origins
-# Production nên restrict lại sau khi test xong
-cors_origins = os.getenv("CORS_ORIGINS", "*")
-if cors_origins == "*":
-    allow_origins = ["*"]
-else:
-    allow_origins = [origin.strip() for origin in cors_origins.split(",")]
-
+# CORS - cho phép tất cả origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=True if allow_origins != ["*"] else False,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Store jobs (tạm, nên dùng Redis/DB)
+# Store jobs
 analysis_jobs = {}
 
 class AnalyzeRequest(BaseModel):
@@ -54,13 +48,15 @@ def test():
     return {
         "status": "ok",
         "message": "Backend is running",
-        "timestamp": datetime.now().isoformat(),
-        "version": "1.0.0"
+        "timestamp": datetime.now().isoformat()
     }
 
+# 🔴 THÊM: POST /api/v1/analyze
 @app.post("/api/v1/analyze", response_model=AnalysisResponse)
 async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTasks):
-    """Bắt đầu phân tích"""
+    """Bắt đầu phân tích fan page"""
+    print(f"📝 Nhận request phân tích: {request.url}")
+    
     job_id = str(uuid.uuid4())
     
     job = {
@@ -76,26 +72,28 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
     }
     analysis_jobs[job_id] = job
     
-    # TODO: Implement actual analysis with Celery
-    background_tasks.add_task(process_analysis_mock, job_id, request.url, request.depth)
+    # Chạy async
+    background_tasks.add_task(process_analysis, job_id, request.url, request.depth)
     
     return AnalysisResponse(**job)
 
-async def process_analysis_mock(job_id: str, url: str, depth: str):
-    """Mock processing - thay bằng Celery task thực tế"""
-    import asyncio
-    
+async def process_analysis(job_id: str, url: str, depth: str):
+    """Xử lý phân tích"""
     job = analysis_jobs[job_id]
     job["status"] = "processing"
+    print(f"🔄 Đang xử lý job {job_id}")
     
     try:
-        await asyncio.sleep(3)  # Giả lập processing
+        start_time = datetime.now()
+        
+        # TODO: Thay bằng crawl Facebook thực tế
+        await asyncio.sleep(2)
         
         # Mock data
         job.update({
             "status": "completed",
             "completed_at": datetime.now().isoformat(),
-            "processing_time": 3.0,
+            "processing_time": 2.0,
             "summary": {
                 "total_comments": 100,
                 "positive": 65,
@@ -107,24 +105,26 @@ async def process_analysis_mock(job_id: str, url: str, depth: str):
             },
             "comments": [
                 {"text": "Sản phẩm tuyệt vời!", "sentiment": "positive", "confidence": 0.95},
-                {"text": "Giao hàng chậm", "sentiment": "negative", "confidence": 0.87},
+                {"text": "Giao hàng chậm quá", "sentiment": "negative", "confidence": 0.87},
             ]
         })
+        print(f"✅ Hoàn thành job {job_id}")
+        
     except Exception as e:
+        print(f"❌ Lỗi job {job_id}: {e}")
         job["status"] = "failed"
         job["error"] = str(e)
 
 @app.get("/api/v1/analysis/{job_id}", response_model=AnalysisResponse)
 def get_analysis(job_id: str):
-    """Lấy kết quả phân tích"""
+    """Lấy kết quả"""
     if job_id not in analysis_jobs:
-        raise HTTPException(status_code=404, detail="Analysis not found")
+        raise HTTPException(status_code=404, detail="Không tìm thấy phân tích")
     
     return AnalysisResponse(**analysis_jobs[job_id])
 
 @app.get("/api/v1/analysis")
 def list_analysis():
-    """List all analyses"""
     return list(analysis_jobs.values())
 
 if __name__ == "__main__":
