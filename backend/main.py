@@ -1,6 +1,3 @@
-"""
-Backend API for Sentiment Analysis with DRL
-"""
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -8,19 +5,19 @@ from typing import List, Optional
 import uuid
 from datetime import datetime
 import asyncio
+import os
 
 app = FastAPI(title="AI Sentiment Analysis DRL")
 
-# CORS - cho phép tất cả (vì cùng domain)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Store jobs (tạm, nên dùng DB sau)
 analysis_jobs = {}
 
 class AnalyzeRequest(BaseModel):
@@ -43,14 +40,9 @@ class AnalysisResponse(BaseModel):
 def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-@app.get("/api/v1/analysis/test")
-def test():
-    return {"status": "ok", "message": "Backend is running"}
-
 @app.post("/api/v1/analyze", response_model=AnalysisResponse)
 async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTasks):
-    """Bắt đầu phân tích"""
-    print(f"📝 Nhận request: {request.url}")
+    print(f"📝 Nhận request phân tích: {request.url}")
     
     job_id = str(uuid.uuid4())
     job = {
@@ -67,52 +59,47 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
     analysis_jobs[job_id] = job
     
     background_tasks.add_task(process_analysis, job_id, request)
-    
     return AnalysisResponse(**job)
 
 async def process_analysis(job_id: str, request: AnalyzeRequest):
-    """Xử lý phân tích"""
     job = analysis_jobs[job_id]
     job["status"] = "processing"
     
     try:
-        start = datetime.now()
+        # TODO: Thay bằng code crawl thật + AI model
+        await asyncio.sleep(3)   # Giả lập
         
-        # TODO: Thay bằng crawl Facebook thực tế
-        await asyncio.sleep(2)
-        
-        # Mock data
         job.update({
             "status": "completed",
             "completed_at": datetime.now().isoformat(),
-            "processing_time": 2.0,
+            "processing_time": 3.0,
             "summary": {
-                "total_comments": 100,
-                "positive": 65,
-                "negative": 20,
-                "neutral": 15,
+                "total_comments": 120,
+                "positive": 78,
+                "negative": 25,
+                "neutral": 17,
                 "positive_pct": 65.0,
-                "negative_pct": 20.0,
-                "neutral_pct": 15.0,
+                "negative_pct": 20.8,
+                "neutral_pct": 14.2,
             },
             "comments": [
-                {"text": "Sản phẩm tuyệt vời!", "sentiment": "positive", "confidence": 0.95},
-                {"text": "Giao hàng chậm", "sentiment": "negative", "confidence": 0.87},
+                {"text": "Rất hài lòng!", "sentiment": "positive", "confidence": 0.92},
             ]
         })
-        print(f"✅ Hoàn thành: {job_id}")
+        print(f"✅ Hoàn thành job {job_id}")
         
     except Exception as e:
         print(f"❌ Lỗi: {e}")
         job["status"] = "failed"
         job["error"] = str(e)
 
-@app.get("/api/v1/analysis/{job_id}", response_model=AnalysisResponse)
+@app.get("/api/v1/analysis/{job_id}")
 def get_analysis(job_id: str):
     if job_id not in analysis_jobs:
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(status_code=404, detail="Job not found")
     return AnalysisResponse(**analysis_jobs[job_id])
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
