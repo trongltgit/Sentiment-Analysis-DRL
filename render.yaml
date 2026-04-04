@@ -25,8 +25,9 @@ services:
         value: "false"
       - key: MODEL_DIR
         value: /opt/render/project/src/models
+      # 🔴 SỬA: Cho phép tất cả origins để test
       - key: CORS_ORIGINS
-        value: "https://sentiment-drl-dashboard.onrender.com,https://*.vercel.app,http://localhost:3000"
+        value: "*"
 
   - type: web
     name: sentiment-drl-dashboard
@@ -37,8 +38,9 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "18.17.0"
+      # 🔴 SỬA: URL đúng, không có dấu cách
       - key: VITE_API_URL
-        value: "https://sentiment-drl-api.onrender.com/api/v1"
+        value: "https://sentiment-drl-api.onrender.com"
 
   - type: worker
     name: sentiment-drl-worker
