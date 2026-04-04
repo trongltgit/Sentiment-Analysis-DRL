@@ -1,16 +1,14 @@
 # ==================== STAGE 1: Build Frontend ====================
 FROM node:20-alpine AS frontend-builder
-
 WORKDIR /app/frontend
 
-# Copy và build frontend
 COPY frontend/package*.json ./
 RUN npm install --no-audit --no-fund
 
 COPY frontend/ ./
 RUN npm run build
 
-# ==================== STAGE 2: Python Backend ====================
+# ==================== STAGE 2: Python Backend + Nginx ====================
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -21,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy backend requirements và cài đặt
+# Cài Python dependencies
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -31,14 +29,14 @@ COPY backend/ ./backend/
 # Copy frontend build vào nginx
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# 🔴 SỬA: Copy nginx.conf từ frontend/ thay vì root
+# Copy nginx config
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-# 🔴 SỬA: Copy start.sh từ root (giả sử vẫn ở root)
+# Copy start script
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-# Expose port (Render sẽ set $PORT)
 EXPOSE 10000
 
+# Chạy start.sh (nginx + uvicorn)
 CMD ["/start.sh"]
