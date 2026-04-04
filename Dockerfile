@@ -1,54 +1,44 @@
 # ==================== STAGE 1: Build Frontend ====================
 FROM node:20-alpine AS frontend-builder
 
-WORKDIR /app
+WORKDIR /app/frontend
 
-# Copy package files trước để cache
+# Copy và build frontend
 COPY frontend/package*.json ./
-RUN npm install --no-audit --no-fund --prefer-offline
+RUN npm install --no-audit --no-fund
 
-# Copy toàn bộ source frontend
 COPY frontend/ ./
-
-# Tạo index.html (vì repo của bạn chưa có file này)
-RUN echo "Creating index.html..." && \
-    cat > index.html << 'EOT'
-<!DOCTYPE html>
-<html lang="vi">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="AI Sentiment Analysis using Deep Reinforcement Learning" />
-    <title>AI Sentiment Analysis DRL</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
-EOT
-
-RUN echo "✅ index.html đã được tạo"
-
-# Build production
 RUN npm run build
 
-# Kiểm tra kết quả
-RUN echo "=== Build result ===" && ls -la dist
+# ==================== STAGE 2: Python Backend ====================
+FROM python:3.11-slim
 
-# ==================== STAGE 2: Nginx Production ====================
-FROM nginx:alpine
+WORKDIR /app
 
-# Copy build output
-COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+# Cài system dependencies
+RUN apt-get update && apt-get install -y \
+    nginx \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy nginx config (bạn đã có file này trong frontend/)
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+# Copy backend requirements và cài đặt
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-EXPOSE 80
+# Copy backend code
+COPY backend/ ./backend/
 
-CMD ["nginx", "-g", "daemon off;"]
+# Copy frontend build vào nginx
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+
+# Copy nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy start script
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
+# Expose port (Render sẽ set $PORT)
+EXPOSE 10000
+
+CMD ["/start.sh"]
