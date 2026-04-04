@@ -2,6 +2,13 @@
 
 echo "🚀 Starting AI Sentiment Analysis Service..."
 
+# 🔴 SỬA: Lấy port từ environment variable (mặc định 10000)
+PORT=${PORT:-10000}
+echo "🔧 Using PORT: $PORT"
+
+# 🔴 SỬA: Thay thế port trong nginx.conf
+sed -i "s/listen 10000/listen $PORT/g" /etc/nginx/conf.d/default.conf
+
 # Start backend ở background
 echo "📡 Starting Backend API on port 8000..."
 cd /app/backend
@@ -19,5 +26,5 @@ else
 fi
 
 # Start nginx (foreground)
-echo "🌐 Starting Nginx on port 10000..."
+echo "🌐 Starting Nginx on port $PORT..."
 nginx -g 'daemon off;'
