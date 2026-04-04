@@ -16,7 +16,7 @@ const URLInput = () => {
   const [showOptions, setShowOptions] = useState(false);
   const navigate = useNavigate();
 
-  // 🔴 SỬA: Dùng relative URL (cùng domain)
+  // ✅ Dùng relative URL - phù hợp với Nginx proxy
   const apiBase = '/api/v1';
 
   const handleSubmit = async (e) => {
@@ -31,7 +31,7 @@ const URLInput = () => {
     }
 
     setLoading(true);
-    console.log('🚀 Gửi request:', `${apiBase}/analyze`);
+    console.log('🚀 Gửi request đến:', `${apiBase}/analyze`);
 
     try {
       const response = await axios.post(`${apiBase}/analyze`, {
@@ -39,37 +39,42 @@ const URLInput = () => {
         max_comments: options.max_comments,
         analysis_depth: options.analysis_depth
       }, {
-        timeout: 30000,
+        timeout: 45000,           // Tăng timeout vì crawl + AI
         headers: { 'Content-Type': 'application/json' }
       });
 
       console.log('✅ Response:', response.data);
-      
+
       const analysisId = response.data.id;
-      if (!analysisId) throw new Error('Không có ID');
+      if (!analysisId) throw new Error('Không nhận được ID phân tích');
 
       toast.success('Phân tích đã bắt đầu!');
       navigate(`/analysis/${analysisId}`);
 
-    } catch (error) {
-      console.error('❌ Lỗi:', error);
-      
-      let message = 'Có lỗi xảy ra';
-      if (error.code === 'ERR_NETWORK') message = 'Không thể kết nối server';
-      else if (error.response?.status === 404) message = 'API không tồn tại';
-      else if (error.response?.status === 500) message = 'Lỗi server';
-      else if (error.message) message = error.message;
-      
+    } catch (err) {
+      console.error('❌ Lỗi submit:', err);
+
+      let message = 'Có lỗi xảy ra khi kết nối server';
+
+      if (err.code === 'ERR_NETWORK' || err.message.includes('Network Error')) {
+        message = 'Không thể kết nối với server (Backend chưa chạy)';
+      } else if (err.response?.status === 500) {
+        message = 'Lỗi server - Đang xử lý quá tải';
+      } else if (err.response?.status === 404) {
+        message = 'API không tồn tại';
+      } else if (err.message) {
+        message = err.message;
+      }
+
       setError(message);
-      toast.error(message, { duration: 5000 });
-      
+      toast.error(message, { duration: 6000 });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="max-w-2xl mx-auto mt-20"
@@ -94,7 +99,7 @@ const URLInput = () => {
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://facebook.com/..."
+            placeholder="https://www.facebook.com/VietinBank/"
             className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-cyan-400 text-white"
             required
           />
@@ -120,20 +125,20 @@ const URLInput = () => {
                 min="10"
                 max="1000"
                 value={options.max_comments}
-                onChange={(e) => setOptions({...options, max_comments: parseInt(e.target.value)})}
+                onChange={(e) => setOptions({ ...options, max_comments: parseInt(e.target.value) })}
                 className="w-full accent-cyan-400"
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Độ sâu</label>
+              <label className="block text-sm text-gray-400 mb-2">Độ sâu phân tích</label>
               <select
                 value={options.analysis_depth}
-                onChange={(e) => setOptions({...options, analysis_depth: e.target.value})}
+                onChange={(e) => setOptions({ ...options, analysis_depth: e.target.value })}
                 className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-white"
               >
                 <option value="basic">Cơ bản</option>
                 <option value="standard">Tiêu chuẩn</option>
-                <option value="deep">Sâu</option>
+                <option value="deep">Sâu (chậm hơn)</option>
               </select>
             </div>
           </div>
@@ -150,7 +155,7 @@ const URLInput = () => {
               Đang xử lý...
             </>
           ) : (
-            'Bắt đầu phân tích AI'
+            '🚀 Bắt đầu phân tích AI'
           )}
         </button>
       </form>
