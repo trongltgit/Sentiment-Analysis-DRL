@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 const URLInput = ({ onAnalysisStart }) => {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null); // 🔴 THÊM: State lưu lỗi
   const [options, setOptions] = useState({
     max_comments: 100,
     analysis_depth: 'standard'
@@ -15,70 +16,82 @@ const URLInput = ({ onAnalysisStart }) => {
   const [showOptions, setShowOptions] = useState(false);
   const navigate = useNavigate();
 
-  // 🔴 SỬA: Dùng environment variable thay vì localhost
   const apiBase = import.meta.env.VITE_API_URL 
     ? `${import.meta.env.VITE_API_URL}/api/v1`
     : 'http://localhost:8000/api/v1';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(null); // Clear previous error
     
     if (!url.includes('facebook.com')) {
-      toast.error('Vui lòng nhập URL Facebook hợp lệ');
+      const msg = 'Vui lòng nhập URL Facebook hợp lệ';
+      setError(msg);
+      toast.error(msg, { duration: 5000 });
       return;
     }
 
     setLoading(true);
-    console.log('🚀 Gửi request đến:', `${apiBase}/analyze`);
-    
+    console.log('🚀 Đang gửi request...');
+    console.log('📍 API URL:', `${apiBase}/analyze`);
+    console.log('📦 Payload:', { url, max_comments: options.max_comments, analysis_depth: options.analysis_depth });
+
     try {
-      // 🔴 SỬA: Dùng apiBase thay vì hardcode
       const response = await axios.post(`${apiBase}/analyze`, {
         url: url,
         max_comments: options.max_comments,
         analysis_depth: options.analysis_depth
       }, {
         timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: { 'Content-Type': 'application/json' }
       });
 
-      console.log('✅ Response:', response.data);
+      console.log('✅ Thành công:', response.data);
       
-      // 🔴 SỬA: Kiểm tra đúng field từ backend
       const analysisId = response.data.id || response.data.analysis_id;
       
       if (!analysisId) {
-        throw new Error('Không nhận được ID phân tích từ server');
+        throw new Error('Server không trả về analysis_id');
       }
 
       onAnalysisStart?.(response.data);
-      toast.success('Phân tích đã bắt đầu!');
+      toast.success('Phân tích đã bắt đầu!', { duration: 3000 });
       navigate(`/analysis/${analysisId}`);
       
     } catch (error) {
-      console.error('❌ Lỗi:', error);
+      console.error('❌ Chi tiết lỗi:', error);
+      console.error('❌ Response:', error.response);
+      console.error('❌ Request config:', error.config);
       
       let message = 'Có lỗi xảy ra khi phân tích';
+      let details = '';
       
       if (error.code === 'ERR_NETWORK') {
-        message = 'Không thể kết nối đến server. Kiểm tra backend đã chạy chưa.';
+        message = 'Không thể kết nối đến server';
+        details = 'Kiểm tra xem backend đã chạy chưa hoặc CORS đã bật chưa';
       } else if (error.code === 'ECONNABORTED') {
-        message = 'Kết nối quá chậm, vui lòng thử lại';
+        message = 'Kết nối quá chậm (timeout)';
       } else if (error.response?.status === 404) {
-        message = 'API không tồn tại (404)';
+        message = 'API endpoint không tồn tại (404)';
+        details = `URL: ${error.config?.url}`;
       } else if (error.response?.status === 500) {
-        message = 'Lỗi server (500)';
-      } else if (error.response?.data?.detail) {
-        message = error.response.data.detail;
+        message = 'Lỗi server nội bộ (500)';
+        details = error.response?.data?.detail || '';
+      } else if (error.response?.status === 400) {
+        message = 'Dữ liệu không hợp lệ (400)';
+        details = error.response?.data?.detail || '';
       } else if (error.message) {
         message = error.message;
       }
       
-      // Hiện lỗi lâu hơn và rõ ràng
-      toast.error(message, { duration: 5000 });
-      alert(`Lỗi: ${message}\n\nAPI: ${apiBase}/analyze`);
+      // 🔴 HIỂN THỊ LỖI TRÊN UI (không biến mất)
+      setError(`${message}${details ? `: ${details}` : ''}`);
+      
+      // Toast lâu hơn
+      toast.error(message, { duration: 10000 });
+      
+      // 🔴 ALERT để chắc chắn thấy lỗi
+      alert(`❌ LỖI PHÂN TÍCH\n\n${message}\n${details ? '\nChi tiết: ' + details : ''}\n\nAPI: ${apiBase}\nStatus: ${error.response?.status || 'Network Error'}`);
       
     } finally {
       setLoading(false);
@@ -96,9 +109,33 @@ const URLInput = ({ onAnalysisStart }) => {
           Phân tích cảm xúc bằng Deep RL
         </h2>
         <p className="text-gray-400">
-          Nhập URL fanpage Facebook để AI phân tích bình luận và đề xuất hành động tối ưu
+          Nhập URL fanpage Facebook để AI phân tích bình luận
         </p>
       </div>
+
+      {/* 🔴 HIỂN THỊ LỖI RÕ RÀNG TRÊN UI */}
+      {error && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-200"
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">❌</span>
+            <div className="flex-1">
+              <p className="font-semibold mb-1">Đã xảy ra lỗi:</p>
+              <p className="text-sm break-all">{error}</p>
+              <p className="text-xs text-red-300 mt-2">API: {apiBase}</p>
+            </div>
+            <button 
+              onClick={() => setError(null)}
+              className="text-red-300 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+        </motion.div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="relative">
@@ -132,7 +169,7 @@ const URLInput = ({ onAnalysisStart }) => {
           >
             <div>
               <label className="block text-sm text-gray-400 mb-2">
-                Số lượng bình luận tối đa: {options.max_comments}
+                Số lượng bình luận: {options.max_comments}
               </label>
               <input
                 type="range"
@@ -172,7 +209,7 @@ const URLInput = ({ onAnalysisStart }) => {
           {loading ? (
             <>
               <Loader2 className="animate-spin" />
-              Đang khởi tạo phân tích...
+              Đang khởi tạo...
             </>
           ) : (
             'Bắt đầu phân tích AI'
@@ -182,16 +219,14 @@ const URLInput = ({ onAnalysisStart }) => {
 
       {/* Debug info */}
       <div className="mt-4 text-center">
-        <p className="text-xs text-gray-600">
-          API: {apiBase}
-        </p>
+        <p className="text-xs text-gray-600 font-mono">API: {apiBase}</p>
       </div>
 
       <div className="mt-12 grid grid-cols-3 gap-4 text-center">
         {[
-          { icon: '🧠', label: 'Deep RL Agent', desc: 'Tự động học và tối ưu' },
+          { icon: '🧠', label: 'Deep RL', desc: 'Tự động học' },
           { icon: '📊', label: 'Multi-Aspect', desc: 'Phân tích đa chiều' },
-          { icon: '⚡', label: 'Real-time', desc: 'Xử lý nhanh chóng' }
+          { icon: '⚡', label: 'Real-time', desc: 'Xử lý nhanh' }
         ].map((feature, idx) => (
           <motion.div
             key={idx}
