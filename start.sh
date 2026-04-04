@@ -2,29 +2,26 @@
 
 echo "🚀 Starting AI Sentiment Analysis Service..."
 
-# 🔴 SỬA: Lấy port từ environment variable (mặc định 10000)
 PORT=${PORT:-10000}
 echo "🔧 Using PORT: $PORT"
 
-# 🔴 SỬA: Thay thế port trong nginx.conf
-sed -i "s/listen 10000/listen $PORT/g" /etc/nginx/conf.d/default.conf
+# Thay port trong nginx.conf
+sed -i "s/listen .*/listen $PORT;/g" /etc/nginx/conf.d/default.conf
 
-# Start backend ở background
-echo "📡 Starting Backend API on port 8000..."
-cd /app/backend
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 &
+echo "📡 Starting Backend (FastAPI) on port 8000..."
+cd /app
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info &
 
-# Đợi backend sẵn sàng
-echo "⏳ Waiting for backend..."
-sleep 5
+# Đợi backend khởi động
+echo "⏳ Waiting for backend to be ready..."
+sleep 8
 
-# Test backend
+# Kiểm tra backend
 if curl -s http://localhost:8000/api/v1/health > /dev/null; then
-    echo "✅ Backend is running!"
+    echo "✅ Backend is running successfully!"
 else
-    echo "⚠️ Backend may not be ready, continuing anyway..."
+    echo "⚠️ Warning: Backend health check failed!"
 fi
 
-# Start nginx (foreground)
 echo "🌐 Starting Nginx on port $PORT..."
 nginx -g 'daemon off;'
