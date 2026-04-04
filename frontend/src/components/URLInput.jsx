@@ -15,6 +15,11 @@ const URLInput = ({ onAnalysisStart }) => {
   const [showOptions, setShowOptions] = useState(false);
   const navigate = useNavigate();
 
+  // 🔴 SỬA: Dùng environment variable thay vì localhost
+  const apiBase = import.meta.env.VITE_API_URL 
+    ? `${import.meta.env.VITE_API_URL}/api/v1`
+    : 'http://localhost:8000/api/v1';
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -24,20 +29,57 @@ const URLInput = ({ onAnalysisStart }) => {
     }
 
     setLoading(true);
+    console.log('🚀 Gửi request đến:', `${apiBase}/analyze`);
     
     try {
-      const response = await axios.post('http://localhost:8000/api/v1/analyze', {
+      // 🔴 SỬA: Dùng apiBase thay vì hardcode
+      const response = await axios.post(`${apiBase}/analyze`, {
         url: url,
         max_comments: options.max_comments,
         analysis_depth: options.analysis_depth
+      }, {
+        timeout: 30000,
+        headers: {
+          'Content-Type': 'application/json',
+        }
       });
 
-      onAnalysisStart(response.data);
+      console.log('✅ Response:', response.data);
+      
+      // 🔴 SỬA: Kiểm tra đúng field từ backend
+      const analysisId = response.data.id || response.data.analysis_id;
+      
+      if (!analysisId) {
+        throw new Error('Không nhận được ID phân tích từ server');
+      }
+
+      onAnalysisStart?.(response.data);
       toast.success('Phân tích đã bắt đầu!');
-      navigate(`/analysis/${response.data.analysis_id}`);
+      navigate(`/analysis/${analysisId}`);
       
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Có lỗi xảy ra');
+      console.error('❌ Lỗi:', error);
+      
+      let message = 'Có lỗi xảy ra khi phân tích';
+      
+      if (error.code === 'ERR_NETWORK') {
+        message = 'Không thể kết nối đến server. Kiểm tra backend đã chạy chưa.';
+      } else if (error.code === 'ECONNABORTED') {
+        message = 'Kết nối quá chậm, vui lòng thử lại';
+      } else if (error.response?.status === 404) {
+        message = 'API không tồn tại (404)';
+      } else if (error.response?.status === 500) {
+        message = 'Lỗi server (500)';
+      } else if (error.response?.data?.detail) {
+        message = error.response.data.detail;
+      } else if (error.message) {
+        message = error.message;
+      }
+      
+      // Hiện lỗi lâu hơn và rõ ràng
+      toast.error(message, { duration: 5000 });
+      alert(`Lỗi: ${message}\n\nAPI: ${apiBase}/analyze`);
+      
     } finally {
       setLoading(false);
     }
@@ -137,6 +179,13 @@ const URLInput = ({ onAnalysisStart }) => {
           )}
         </motion.button>
       </form>
+
+      {/* Debug info */}
+      <div className="mt-4 text-center">
+        <p className="text-xs text-gray-600">
+          API: {apiBase}
+        </p>
+      </div>
 
       <div className="mt-12 grid grid-cols-3 gap-4 text-center">
         {[
