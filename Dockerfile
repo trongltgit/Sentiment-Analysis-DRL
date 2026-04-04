@@ -31,10 +31,10 @@ COPY backend/ ./backend/
 # Copy frontend build vào nginx
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# 🔴 SỬA: Copy nginx.conf từ frontend/ thay vì root
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy start script
+# 🔴 SỬA: Copy start.sh từ root (giả sử vẫn ở root)
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
