@@ -2,25 +2,12 @@ services:
   - type: web
     name: sentiment-analysis-drl
     runtime: docker
-    plan: standard           # Standard sẽ ít sleep hơn Free rất nhiều
+    plan: standard
     region: singapore
-    healthCheckPath: /api/v1/health     # ← Quan trọng
+    healthCheckPath: /api/v1/health
     envVars:
       - key: PORT
         value: "10000"
       - key: PYTHONUNBUFFERED
         value: "1"
-      - key: ENVIRONMENT
-        value: "production"
-    dockerfilePath: Dockerfile   # Thêm dòng này nếu anh có Dockerfile ở root
-
-# Nếu anh muốn giữ database + redis
-databases:
-  - name: sentiment-db
-    plan: starter
-    region: singapore
-
-redis:
-  - name: sentiment-redis
-    plan: starter
-    region: singapore
+    dockerfilePath: Dockerfile
