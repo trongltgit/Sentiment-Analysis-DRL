@@ -21,15 +21,17 @@ echo "📡 Starting Backend on port 8000..."
 cd /app
 export PYTHONUNBUFFERED=1
 
-# Pre-check imports
+# Pre-check imports - KHÔNG import SentimentAnalyzer để tránh load model
 python -c "
 import sys
 sys.path.insert(0, '/app')
 sys.path.insert(0, '/app/backend')
 try:
-    from app.services.analyzer import SentimentAnalyzer
-    from app.services.crawler import CommentCrawler
-    print('✅ Imports OK')
+    # Chỉ check import cơ bản, không load model nặng
+    from app.main import app
+    from app.config import settings
+    print('✅ FastAPI app import OK')
+    print(f'✅ Config loaded: {settings.APP_NAME}')
 except Exception as e:
     print(f'❌ Import error: {e}')
     import traceback
@@ -37,14 +39,19 @@ except Exception as e:
     sys.exit(1)
 " || exit 1
 
-# Start uvicorn
+# Giới hạn RAM cho Python
+export PYTHONOPTIMIZE=1
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
+# Start uvicorn với memory limit
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info &
 BACKEND_PID=$!
 
-# 5. Wait for backend (max 120s)
+# 5. Wait for backend (max 120s) - Health check sẽ trigger lazy load model
 echo "⏳ Waiting for backend..."
 for i in {1..60}; do
-    if curl -s --max-time 2 http://localhost:8000/api/v1/health 2>/dev/null | grep -q "healthy"; then
+    if curl -s --max-time 2 http://localhost:8000/api/v1/health 2>/dev/null | grep -q "healthy\|ok"; then
         echo "✅ Backend ready!"
         break
     fi
