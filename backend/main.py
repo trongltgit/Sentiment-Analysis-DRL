@@ -39,6 +39,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.get("/")
+def root():
+    return {"status": "AI Sentiment Analysis API", "version": "1.0.0"}
+
+@app.head("/")
+def root_head():
+    return None
+
 # Storage
 analysis_jobs = {}
 
