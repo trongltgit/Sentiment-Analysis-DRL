@@ -13,16 +13,16 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Cài system dependencies - THÊM CHROMIUM
+# Cài system dependencies - SỬA LẠI CHO DEBIAN 12
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     curl \
     chromium \
     chromium-driver \
+    # Core libs (sửa tên cho Debian 12)
     libglib2.0-0 \
     libnss3 \
-    libgconf-2-4 \
     libfontconfig1 \
     libxss1 \
     libasound2 \
@@ -30,6 +30,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-0 \
     libgbm-dev \
     libxshmfence-dev \
+    # Thêm libs cần thiết cho Chromium
+    libx11-xcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxi6 \
+    libxtst6 \
+    libnss3 \
+    libxrandr2 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxkbcommon0 \
+    libxshmfence1 \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && mkdir -p /app/logs /tmp /run/nginx
 
@@ -43,7 +59,7 @@ RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch
 # Cài transformers
 RUN pip install --no-cache-dir transformers==4.35.0
 
-# CÀI PLAYWRIGHT BROWSER - THÊM MỚI
+# CÀI PLAYWRIGHT BROWSER
 RUN playwright install chromium
 
 # Copy backend code
