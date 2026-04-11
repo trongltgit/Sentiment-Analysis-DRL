@@ -1,7 +1,6 @@
 """
-Web Crawler - Tách riêng comments tốt/xấu/trung lập, lọc trùng & spam
+Crawler - Tách riêng Good/Bad/Neutral, lọc trùng tuyệt đối
 """
-import asyncio
 import random
 import time
 import hashlib
@@ -11,378 +10,326 @@ import re
 
 
 class CommentCrawler:
-    """Crawl và phân loại comments"""
+    """Crawl và phân loại comments thành 3 nhóm riêng biệt"""
     
     def __init__(self):
-        self.seen_texts: Set[str] = set()  # Track để tránh trùng lặp
+        self.seen_hashes: Set[str] = set()
     
-    def _normalize_text(self, text: str) -> str:
-        """Chuẩn hóa text để so sánh trùng lặp"""
-        # Bỏ dấu câu, chuyển lowercase, bỏ extra spaces
-        text = re.sub(r'[^\w\s]', '', text.lower())
-        text = ' '.join(text.split())
-        return text.strip()
+    def _get_hash(self, text: str) -> str:
+        """Tạo hash để so sánh trùng lặp"""
+        # Chuẩn hóa: lowercase, bỏ dấu câu, bỏ emoji
+        normalized = re.sub(r'[^\w\s]', '', text.lower())
+        normalized = ' '.join(normalized.split())
+        return hashlib.md5(normalized.encode()).hexdigest()[:16]
+    
+    def _is_valid(self, text: str) -> bool:
+        """Kiểm tra comment có hợp lệ không"""
+        if not text or len(text) < 15:
+            return False
+        
+        # Bỏ nếu chỉ có emoji/special chars
+        letters = re.sub(r'[^\w\s]', '', text)
+        if len(letters) < 10:
+            return False
+        
+        # Bỏ spam link
+        if re.search(r'http|www\.|\.com|\.vn', text.lower()):
+            return False
+        
+        return True
     
     def _is_duplicate(self, text: str) -> bool:
-        """Kiểm tra text đã tồn tại chưa"""
-        normalized = self._normalize_text(text)
-        if len(normalized) < 10:  # Quá ngắn, coi như trùng
+        """Kiểm tra và track trùng lặp"""
+        h = self._get_hash(text)
+        if h in self.seen_hashes:
             return True
-        
-        # Hash để so sánh nhanh
-        text_hash = hashlib.md5(normalized.encode()).hexdigest()[:16]
-        
-        if text_hash in self.seen_texts:
-            return True
-        
-        self.seen_texts.add(text_hash)
+        self.seen_hashes.add(h)
         return False
     
-    def _is_spam(self, text: str) -> bool:
-        """Lọc spam/comments xấu"""
+    def _classify_sentiment(self, text: str) -> str:
+        """Phân loại sentiment dựa trên từ khóa"""
         text_lower = text.lower()
         
-        # Spam indicators
-        spam_patterns = [
-            r'http[s]?://',  # Link
-            r'@\w+',         # Mention nhiều
-            r'#\w+',         # Hashtag spam
-            r'(.)\1{4,}',    # Lặp ký tự (ví dụ: "aaaaa")
+        # Từ khóa tiêu cực mạnh
+        negative_words = [
+            'tệ', 'kém', 'chán', 'tồi', 'dở', 'thất vọng', 'buồn', 'ghét', 'không thích',
+            'lỗi', 'hỏng', 'khiếu nại', 'phàn nàn', 'giận', 'bực', 'tức', 'kinh khủng',
+            'tồi tệ', 'kinh dị', 'quá tệ', 'rất dở', 'chán ngắt', 'phí tiền', 'lừa đảo',
+            'gian dối', 'tệ hại', 'kém chất lượng', 'chậm', 'hư', 'bể', 'móp', 'rách'
         ]
         
-        for pattern in spam_patterns:
-            if re.search(pattern, text_lower):
-                return True
-        
-        # Quá ngắn hoặc quá dài
-        if len(text) < 15 or len(text) > 500:
-            return True
-        
-        # Chỉ có emoji/ký tự đặc biệt
-        if len(re.sub(r'[^\w\s]', '', text)) < 10:
-            return True
-        
-        return False
-    
-    def _classify_quality(self, text: str, sentiment: str) -> str:
-        """Phân loại chất lượng comment"""
-        text_lower = text.lower()
-        
         # Từ khóa tích cực mạnh
-        strong_positive = ['tuyệt vời', 'xuất sắc', 'hoàn hảo', 'rất hài lòng', 'quá tốt']
-        # Từ khóa tiêu cực mạnh  
-        strong_negative = ['thất vọng', 'tệ hại', 'kinh khủng', 'tồi tệ', 'khiếu nại', 'lừa đảo']
-        # Từ khóa trung lập
-        neutral_indicators = ['bình thường', 'tạm được', 'cũng được', 'không có gì']
+        positive_words = [
+            'tốt', 'hay', 'đẹp', 'tuyệt', 'thích', 'hài lòng', 'xuất sắc', 'hoàn hảo',
+            'tuyệt vời', 'đáng yêu', 'dễ thương', 'ngon', 'chất lượng', 'ủng hộ', 'mua lại',
+            'recommend', 'nên mua', 'đáng tiền', 'hợp lý', 'nhanh', 'chu đáo', 'nhiệt tình',
+            'thân thiện', 'pro', 'đỉnh', 'đỉnh cao', 'hết ý', 'quá đã', 'sướng', 'mê'
+        ]
         
-        if sentiment == "positive":
-            if any(w in text_lower for w in strong_positive):
-                return "high"
-            return "medium"
-        elif sentiment == "negative":
-            if any(w in text_lower for w in strong_negative):
-                return "high"  # Negative high = cần chú ý
-            return "medium"
+        # Từ khóa trung lập
+        neutral_words = [
+            'bình thường', 'tạm', 'cũng được', 'tàm tạm', 'không tốt không xấu',
+            'tạm chấp nhận', 'bth', 'bt', 'tạm ổn', 'cỡ này', 'vậy thôi', 'thế thôi'
+        ]
+        
+        neg_score = sum(2 for w in negative_words if w in text_lower)
+        pos_score = sum(2 for w in positive_words if w in text_lower)
+        neu_score = sum(1 for w in neutral_words if w in text_lower)
+        
+        # Ưu tiên negative vì cần chú ý
+        if neg_score > pos_score:
+            return "negative"
+        elif pos_score > neg_score:
+            return "positive"
+        elif neu_score > 0:
+            return "neutral"
         else:
-            if any(w in text_lower for w in neutral_indicators):
-                return "high"
-            return "low"
+            # Không rõ ràng -> neutral
+            return "neutral"
+    
+    def _score_quality(self, text: str, sentiment: str) -> int:
+        """Đánh giá chất lượng comment (0-10)"""
+        score = 5  # Base
+        
+        # Độ dài
+        if len(text) > 100:
+            score += 2
+        elif len(text) > 50:
+            score += 1
+        elif len(text) < 30:
+            score -= 1
+        
+        # Chi tiết (có số, có tính từ cụ thể)
+        if re.search(r'\d', text):  # Có số
+            score += 1
+        if len(text.split()) > 10:  # Nhiều từ
+            score += 1
+        
+        # Sentiment mạnh
+        if sentiment == "negative":
+            strong_neg = ['thất vọng', 'khiếu nại', 'lừa đảo', 'kinh khủng', 'tồi tệ']
+            if any(w in text.lower() for w in strong_neg):
+                score += 2  # Cần chú ý cao
+        
+        return max(0, min(10, score))
     
     async def crawl(self, url: str, max_comments: int = 100) -> Dict[str, List[Dict]]:
         """
-        Crawl và phân loại comments thành 3 nhóm: tốt, xấu, trung lập
-        Trả về dict với keys: good, bad, neutral
+        Crawl và trả về 3 nhóm riêng biệt: good, bad, neutral
         """
-        platform = self._detect_platform(url)
-        print(f"🔍 Platform: {platform}")
-        
         # Reset tracker
-        self.seen_texts = set()
+        self.seen_hashes = set()
         
-        # Generate comments theo platform
-        if platform == "facebook":
-            raw = await self._gen_facebook(url, max_comments)
-        elif platform == "youtube":
-            raw = await self._gen_youtube(url, max_comments)
-        elif platform == "shopee":
-            raw = await self._gen_shopee(url, max_comments)
-        else:
-            raw = await self._gen_generic(url, max_comments)
+        # Generate theo platform
+        platform = self._detect_platform(url)
+        raw = self._generate_comments(url, platform, max_comments * 2)  # Gen nhiều để lọc
         
-        # Lọc và phân loại
+        # Phân loại và lọc
         result = {
-            "good": [],      # Tích cực + chất lượng cao
-            "bad": [],       # Tiêu cực + cần chú ý
-            "neutral": []    # Trung lập hoặc không rõ ràng
+            "good": [],      # Tích cực + chất lượng
+            "bad": [],       # Tiêu cực (cần chú ý)
+            "neutral": []    # Không rõ ràng
         }
         
         for comment in raw:
-            text = comment.get("text", "")
+            text = comment["text"]
             
-            # Lọc spam và trùng lặp
-            if self._is_spam(text):
+            # Lọc
+            if not self._is_valid(text):
                 continue
             if self._is_duplicate(text):
                 continue
             
-            sentiment = comment.get("sentiment", "neutral")
-            quality = self._classify_quality(text, sentiment)
+            sentiment = self._classify_sentiment(text)
+            quality = self._score_quality(text, sentiment)
             
-            # Thêm metadata
+            # Phân loại vào nhóm
             enriched = {
                 **comment,
+                "sentiment": sentiment,
                 "quality_score": quality,
-                "text_length": len(text),
-                "word_count": len(text.split())
+                "is_priority": False
             }
             
-            # Phân loại vào 3 nhóm
-            if sentiment == "positive" and quality in ["high", "medium"]:
+            if sentiment == "negative":
+                # Tất cả negative vào bad, đánh dấu priority nếu quality cao
+                enriched["is_priority"] = quality >= 7
+                result["bad"].append(enriched)
+            elif sentiment == "positive" and quality >= 6:
+                # Chỉ positive chất lượng mới vào good
                 result["good"].append(enriched)
-            elif sentiment == "negative":
-                result["bad"].append(enriched)  # Tất cả negative đều vào bad
             else:
+                # Còn lại vào neutral
                 result["neutral"].append(enriched)
         
-        # Sắp xếp: good theo likes, bad theo urgency, neutral theo confidence
-        result["good"].sort(key=lambda x: (x.get("likes", 0), x.get("confidence", 0)), reverse=True)
-        result["bad"].sort(key=lambda x: (x.get("confidence", 0), x.get("likes", 0)), reverse=True)
-        result["neutral"].sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        # Sắp xếp
+        # Good: theo quality score
+        result["good"].sort(key=lambda x: (x["quality_score"], x.get("likes", 0)), reverse=True)
+        # Bad: priority trước, rồi đến quality
+        result["bad"].sort(key=lambda x: (x["is_priority"], x["quality_score"]), reverse=True)
+        # Neutral: theo likes
+        result["neutral"].sort(key=lambda x: x.get("likes", 0), reverse=True)
         
-        print(f"✅ Filtered: {len(result['good'])} good, {len(result['bad'])} bad, {len(result['neutral'])} neutral")
-        print(f"   (Removed: {len(raw) - sum(len(v) for v in result.values())} duplicates/spam)")
+        # Giới hạn số lượng
+        for key in result:
+            result[key] = result[key][:max_comments // 3 + 20]
+        
+        print(f"✅ {platform}: {len(result['good'])} good, {len(result['bad'])} bad, {len(result['neutral'])} neutral")
+        print(f"   (Filtered: {len(raw) - sum(len(v) for v in result.values())} duplicates/invalid)")
         
         return result
     
     def _detect_platform(self, url: str) -> str:
-        url_lower = url.lower()
-        if "facebook" in url_lower:
+        u = url.lower()
+        if "facebook" in u:
             return "facebook"
-        elif "youtube" in url_lower or "youtu.be" in url_lower:
+        elif "youtube" in u or "youtu.be" in u:
             return "youtube"
-        elif "shopee" in url_lower:
+        elif "shopee" in u:
             return "shopee"
         return "generic"
     
-    def _url_to_seed(self, url: str) -> int:
-        return sum(ord(c) * (i + 1) for i, c in enumerate(url)) % 10000
+    def _url_seed(self, url: str) -> int:
+        return sum(ord(c) * i for i, c in enumerate(url)) % 10000
     
-    def _random_time(self) -> str:
-        from datetime import datetime, timedelta
-        days = random.randint(0, 30)
-        return (datetime.now() - timedelta(days=days)).isoformat()
-    
-    async def _gen_facebook(self, url: str, max: int) -> List[Dict]:
-        """Generate Facebook comments - đa dạng, có trùng lặp để test filter"""
-        seed = self._url_to_seed(url)
+    def _generate_comments(self, url: str, platform: str, count: int) -> List[Dict]:
+        """Generate comments đa dạng theo platform"""
+        seed = self._url_seed(url)
         random.seed(seed)
         
-        # Templates với độ dài và sentiment khác nhau
-        templates = {
-            "positive": [
-                {"text": "Sản phẩm tuyệt vời! Mình rất hài lòng 😍", "likes": 50},
-                {"text": "Chất lượng quá tốt, ủng hộ shop dài dài", "likes": 30},
-                {"text": "Giao hàng nhanh, đóng gói cẩn thận", "likes": 20},
-                {"text": "Nhân viên nhiệt tình, sản phẩm đúng mô tả", "likes": 15},
-                {"text": "Mua lần thứ 3 rồi, vẫn rất ưng ý!", "likes": 45},
-                {"text": "Giá hợp lý, chất lượng xứng đáng", "likes": 25},
-                {"text": "Recommend cho mọi người nha! 👍", "likes": 35},
-                {"text": "Không thể hài lòng hơn được nữa", "likes": 40},
-                # Trùng lặp để test
-                {"text": "Sản phẩm tuyệt vời! Mình rất hài lòng 😍", "likes": 10},  # DUPLICATE
-                {"text": "Tuyệt vời!", "likes": 5},  # SPAM (quá ngắn)
-            ],
-            "negative": [
-                {"text": "Thất vọng quá, sản phẩm không như hình", "likes": 5},
-                {"text": "Giao hàng chậm 3 ngày, không ai liên lạc", "likes": 12},
-                {"text": "Chất lượng kém, dùng 2 ngày đã hỏng", "likes": 20},
-                {"text": "Giá đắt mà chất lượng tệ, phí tiền", "likes": 8},
-                {"text": "Thái độ nhân viên phục vụ quá tệ", "likes": 15},
-                {"text": "Khiếu nại hoài không được giải quyết", "likes": 25},
-                {"text": "Sản phẩm lỗi, đổi trả rườm rà", "likes": 10},
-                {"text": "Không đáng tiền, mọi người đừng mua", "likes": 18},
-                # Trùng lặp
-                {"text": "Thất vọng quá, sản phẩm không như hình", "likes": 3},  # DUPLICATE
-            ],
-            "neutral": [
-                {"text": "Tạm được, không có gì đặc biệt", "likes": 8},
-                {"text": "Giá cả hợp lý, chất lượng tầm trung", "likes": 12},
-                {"text": "Giao hàng đúng hẹn, sản phẩm bình thường", "likes": 6},
-                {"text": "Cũng được, xài tạm ổn", "likes": 5},
-                {"text": "Sẽ cân nhắc mua lại", "likes": 7},
-                {"text": "Không tốt không xấu", "likes": 4},
-                # Spam
-                {"text": "Ok", "likes": 1},  # SPAM
-                {"text": "Được", "likes": 2},  # SPAM
-            ]
+        generators = {
+            "facebook": self._gen_facebook,
+            "youtube": self._gen_youtube,
+            "shopee": self._gen_shopee,
+            "generic": self._gen_generic
         }
         
-        comments = []
-        n = min(max, random.randint(60, 150))
-        
-        for i in range(n):
-            # Chọn sentiment với tỷ lệ
-            sentiment = random.choices(
-                ["positive", "negative", "neutral"],
-                weights=[0.4, 0.3, 0.3]
-            )[0]
-            
-            template = random.choice(templates[sentiment])
-            
-            # Thêm biến thể nhỏ để không phải 100% trùng
-            text = template["text"]
-            if random.random() > 0.7:
-                text += random.choice(["!", " 👍", " ❤️", "..."])
-            
-            comments.append({
-                "id": f"fb_{i}_{int(time.time()*1000)}",
-                "text": text,
-                "sentiment": sentiment,
-                "likes": template["likes"] + random.randint(-5, 10),
-                "timestamp": self._random_time(),
-                "platform": "facebook"
-            })
-        
-        return comments
+        gen_func = generators.get(platform, self._gen_generic)
+        return gen_func(count, seed)
     
-    async def _gen_youtube(self, url: str, max: int) -> List[Dict]:
-        """Generate YouTube comments"""
-        seed = self._url_to_seed(url) + 1000
-        random.seed(seed)
-        
-        templates = {
-            "positive": [
-                {"text": "Video hay quá, rất hữu ích!", "likes": 100},
-                {"text": "Giải thích rõ ràng, dễ hiểu", "likes": 80},
-                {"text": "Content chất lượng, đăng ký ủng hộ", "likes": 120},
-                {"text": "Xem xong hiểu luôn, cảm ơn!", "likes": 60},
-            ],
-            "negative": [
-                {"text": "Video chán, nói lòng vòng không vào đề", "likes": 20},
-                {"text": "Sai thông tin, cần fact check lại", "likes": 35},
-                {"text": "Âm thanh kém, nghe không rõ", "likes": 15},
-                {"text": "Dài dòng quá, 10 phút chỉ có 1 ý", "likes": 25},
-            ],
-            "neutral": [
-                {"text": "Video cũng được, xem cho biết", "likes": 30},
-                {"text": "Thông tin bình thường, không mới", "likes": 20},
-                {"text": "Cũng ok, nhưng có thể làm tốt hơn", "likes": 25},
-            ]
-        }
+    def _gen_facebook(self, count: int, seed: int) -> List[Dict]:
+        """Facebook comments"""
+        templates = [
+            # Positive - Good
+            {"t": "Sản phẩm tuyệt vời! Mình rất hài lòng với chất lượng", "s": "pos", "l": 45},
+            {"t": "Giao hàng nhanh, đóng gói cẩn thận. 5 sao!", "s": "pos", "l": 32},
+            {"t": "Nhân viên tư vấn nhiệt tình, sản phẩm đúng mô tả", "s": "pos", "l": 28},
+            {"t": "Mua lần thứ 3 rồi, vẫn rất ưng ý! Recommend mọi người", "s": "pos", "l": 50},
+            {"t": "Chất lượng quá tốt luôn, giá lại hợp lý", "s": "pos", "l": 35},
+            {"t": "Shop uy tín, sẽ ủng hộ dài dài ❤️", "s": "pos", "l": 25},
+            
+            # Positive - Weak (sẽ vào neutral)
+            {"t": "Cũng được", "s": "pos_weak", "l": 5},
+            {"t": "Ok", "s": "pos_weak", "l": 2},
+            {"t": "Tạm", "s": "pos_weak", "l": 3},
+            
+            # Negative - Bad (cần chú ý)
+            {"t": "Thất vọng quá, sản phẩm không như hình mô tả", "s": "neg", "l": 15},
+            {"t": "Giao hàng chậm 3 ngày, không ai liên lạc giải thích", "s": "neg", "l": 20},
+            {"t": "Chất lượng kém, dùng 2 ngày đã hỏng. Khiếu nại hoài không được", "s": "neg", "l": 35},
+            {"t": "Giá đắt mà chất lượng tệ, cảm giác bị lừa", "s": "neg", "l": 18},
+            {"t": "Thái độ nhân viên phục vụ quá tệ, không bao giờ quay lại", "s": "neg", "l": 22},
+            {"t": "Đóng gói cẩu thả, sản phẩm bị móp méo. Phí tiền", "s": "neg", "l": 25},
+            {"t": "Không đáng tiền, mọi người đừng mua ở đây", "s": "neg", "l": 12},
+            {"t": "Khiếu nại 2 tuần vẫn chưa được giải quyết. Thất vọng tuyệt đối", "s": "neg", "l": 30},
+            
+            # Neutral
+            {"t": "Tạm được, không có gì đặc biệt", "s": "neu", "l": 8},
+            {"t": "Giá cả hợp lý, chất lượng tầm trung", "s": "neu", "l": 15},
+            {"t": "Giao hàng đúng hẹn, sản phẩm bình thường", "s": "neu", "l": 12},
+            {"t": "Cũng được, xài tạm ổn", "s": "neu", "l": 6},
+            {"t": "Sẽ cân nhắc mua lại sau", "s": "neu", "l": 10},
+            {"t": "Không tốt không xấu, bthg", "s": "neu", "l": 7},
+            
+            # Duplicates để test lọc
+            {"t": "Sản phẩm tuyệt vời! Mình rất hài lòng với chất lượng", "s": "pos", "l": 8},  # DUP
+            {"t": "Thất vọng quá, sản phẩm không như hình mô tả", "s": "neg", "l": 3},  # DUP
+        ]
         
         comments = []
-        n = min(max, random.randint(80, 200))
-        
-        for i in range(n):
-            sentiment = random.choices(
-                ["positive", "negative", "neutral"],
-                weights=[0.35, 0.25, 0.4]
-            )[0]
+        for i in range(count):
+            t = random.choice(templates)
+            text = t["t"]
             
-            template = random.choice(templates[sentiment])
-            text = template["text"]
-            
+            # Thêm biến thể nhỏ
             if random.random() > 0.8:
-                text += random.choice([" 👍", " 👎", " 🤔", ""])
+                text += random.choice(["!", " 👍", " 😊", " ❤️", "...", "!!"])
             
             comments.append({
-                "id": f"yt_{i}",
+                "id": f"fb_{seed}_{i}",
                 "text": text,
-                "sentiment": sentiment,
-                "likes": template["likes"] + random.randint(-10, 20),
-                "timestamp": self._random_time(),
-                "platform": "youtube"
+                "likes": t["l"] + random.randint(-3, 5),
+                "timestamp": f"2026-{random.randint(1,4)}-{random.randint(1,28)}"
             })
         
         return comments
     
-    async def _gen_shopee(self, url: str, max: int) -> List[Dict]:
-        """Generate Shopee reviews"""
-        seed = self._url_to_seed(url) + 2000
-        random.seed(seed)
-        
-        templates = {
-            "positive": [
-                {"text": "Đã nhận hàng, chất lượng tốt đúng mô tả", "rating": 5},
-                {"text": "Sản phẩm đẹp, giao nhanh, shop uy tín", "rating": 5},
-                {"text": "Rất ưng ý, sẽ ủng hộ shop lần sau", "rating": 5},
-                {"text": "Hàng chuẩn auth, đóng gói cẩn thận", "rating": 5},
-            ],
-            "negative": [
-                {"text": "Hàng lỗi, liên hệ shop không trả lời", "rating": 1},
-                {"text": "Chất liệu kém, mỏng và dễ rách", "rating": 2},
-                {"text": "Size nhỏ hơn bảng size, không mặc vừa", "rating": 2},
-                {"text": "Màu sắc khác hình, thất vọng", "rating": 1},
-            ],
-            "neutral": [
-                {"text": "Hàng cũng được, tạm ổn với giá này", "rating": 3},
-                {"text": "Không đẹp như hình nhưng cũng tạm dùng", "rating": 3},
-                {"text": "Giao hàng bình thường, sản phẩm tạm được", "rating": 3},
-            ]
-        }
+    def _gen_youtube(self, count: int, seed: int) -> List[Dict]:
+        """YouTube comments"""
+        templates = [
+            {"t": "Video hay quá! Giải thích rõ ràng dễ hiểu", "s": "pos", "l": 120},
+            {"t": "Content chất lượng, đăng ký ủng hộ ngay", "s": "pos", "l": 85},
+            {"t": "Xem xong hiểu luôn, cảm ơn bạn nhiều", "s": "pos", "l": 60},
+            {"t": "Video chán, nói lòng vòng không vào đề", "s": "neg", "l": 25},
+            {"t": "Sai thông tin rồi, cần fact check lại", "s": "neg", "l": 40},
+            {"t": "Âm thanh kém, nghe không rõ gì hết", "s": "neg", "l": 15},
+            {"t": "Video cũng được, xem cho biết", "s": "neu", "l": 30},
+            {"t": "Thông tin bình thường, không mới", "s": "neu", "l": 22},
+        ]
         
         comments = []
-        n = min(max, random.randint(30, 80))
-        
-        for i in range(n):
-            sentiment = random.choices(
-                ["positive", "negative", "neutral"],
-                weights=[0.5, 0.2, 0.3]
-            )[0]
-            
-            template = random.choice(templates[sentiment])
-            
+        for i in range(count):
+            t = random.choice(templates)
             comments.append({
-                "id": f"sp_{i}",
-                "text": template["text"],
-                "sentiment": sentiment,
-                "rating": template["rating"],
-                "likes": random.randint(0, 30),
-                "has_image": random.random() > 0.8,
-                "timestamp": self._random_time(),
-                "platform": "shopee"
+                "id": f"yt_{seed}_{i}",
+                "text": t["t"],
+                "likes": t["l"] + random.randint(-10, 20),
+                "timestamp": f"2026-{random.randint(1,4)}-{random.randint(1,28)}"
             })
         
         return comments
     
-    async def _gen_generic(self, url: str, max: int) -> List[Dict]:
-        """Generate generic comments"""
-        seed = self._url_to_seed(url)
-        random.seed(seed)
-        
-        domain = urlparse(url).netloc
-        
-        texts = {
-            "positive": [
-                f"Rất hài lòng với dịch vụ của {domain}",
-                "Sản phẩm chất lượng, đáng tiền",
-                "Trải nghiệm tuyệt vời, sẽ quay lại",
-            ],
-            "negative": [
-                f"Thất vọng về {domain}, cần cải thiện",
-                "Chất lượng không như mong đợi",
-                "Dịch vụ kém, không recommend",
-            ],
-            "neutral": [
-                "Bình thường, không có gì đặc biệt",
-                "Cũng được, giá hợp lý",
-                "Tạm chấp nhận được",
-            ]
-        }
+    def _gen_shopee(self, count: int, seed: int) -> List[Dict]:
+        """Shopee reviews"""
+        templates = [
+            {"t": "Đã nhận hàng, chất lượng tốt đúng mô tả. Sẽ ủng hộ lại", "s": "pos", "l": 25},
+            {"t": "Sản phẩm đẹp, giao nhanh, shop uy tín 5 sao", "s": "pos", "l": 40},
+            {"t": "Hàng lỗi, liên hệ shop không trả lời. Thất vọng", "s": "neg", "l": 8},
+            {"t": "Chất liệu kém, mỏng và dễ rách. Không như hình", "s": "neg", "l": 15},
+            {"t": "Hàng cũng được, tạm ổn với giá này", "s": "neu", "l": 12},
+        ]
         
         comments = []
-        n = min(max, random.randint(20, 50))
-        
-        for i in range(n):
-            sentiment = random.choice(["positive", "negative", "neutral"])
-            
+        for i in range(count):
+            t = random.choice(templates)
             comments.append({
-                "id": f"gen_{i}",
-                "text": random.choice(texts[sentiment]),
-                "sentiment": sentiment,
+                "id": f"sp_{seed}_{i}",
+                "text": t["t"],
+                "rating": 5 if t["s"] == "pos" else (1 if t["s"] == "neg" else 3),
+                "likes": t["l"] + random.randint(-5, 10),
+                "timestamp": f"2026-{random.randint(1,4)}-{random.randint(1,28)}"
+            })
+        
+        return comments
+    
+    def _gen_generic(self, count: int, seed: int) -> List[Dict]:
+        """Generic comments"""
+        texts = [
+            "Rất hài lòng với trải nghiệm này",
+            "Không tốt như mong đợi, cần cải thiện",
+            "Bình thường, không có gì đặc biệt",
+            "Tuyệt vời, sẽ quay lại lần sau",
+            "Thất vọng về chất lượng dịch vụ",
+            "Cũng được, giá hợp lý",
+        ]
+        
+        comments = []
+        for i in range(count):
+            comments.append({
+                "id": f"gen_{seed}_{i}",
+                "text": random.choice(texts),
                 "likes": random.randint(0, 20),
-                "timestamp": self._random_time(),
-                "platform": "generic"
+                "timestamp": f"2026-{random.randint(1,4)}-{random.randint(1,28)}"
             })
         
         return comments
