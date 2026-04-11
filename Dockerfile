@@ -3,7 +3,8 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+# FIX: Remove --omit=dev to install devDependencies (including vite)
+RUN npm install --no-audit --no-fund
 
 COPY frontend/ ./
 RUN npm run build
@@ -26,7 +27,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # CÀI TORCH CPU RIÊNG (cách đúng)
-RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu 
 
 # Cài transformers sau torch
 RUN pip install --no-cache-dir transformers==4.35.0
