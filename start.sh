@@ -1,54 +1,35 @@
 #!/bin/bash
-set -e  # Exit on error
+set -e
 
 echo "🚀 Starting AI Sentiment Analysis Service..."
-
 PORT=${PORT:-10000}
-echo "🔧 Using PORT: $PORT"
+echo "🔧 PORT: $PORT"
 
-# ============================================
-# 1. CONFIGURE NGINX
-# ============================================
-echo "📝 Configuring nginx..."
-
-# Xóa config cũ
+# 1. Cleanup nginx
 rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf 2>/dev/null || true
+sed -i "s/listen 10000/listen $PORT/g" /etc/nginx/conf.d/default.conf 2>/dev/null || true
 
-# Thay port trong nginx.conf
-sed -i "s/listen 10000/listen $PORT/g" /etc/nginx/conf.d/default.conf 2>/dev/null || \
-sed -i "s/listen .*/listen $PORT;/g" /etc/nginx/conf.d/default.conf
+# 2. Test nginx config
+nginx -t || exit 1
 
-# Validate nginx config
-nginx -t || {
-    echo "❌ Nginx config failed!"
-    cat /etc/nginx/conf.d/default.conf
-    exit 1
-}
-
-# ============================================
-# 2. START BACKGROUND NGINX (trước để khởi động nhanh)
-# ============================================
-echo "🌐 Starting nginx temporarily..."
+# 3. Start nginx
+echo "🌐 Starting nginx..."
 nginx
 
-# ============================================
-# 3. START BACKEND (quan trọng nhất!)
-# ============================================
-echo "📡 Starting Backend (FastAPI) on port 8000..."
+# 4. Start backend
+echo "📡 Starting Backend on port 8000..."
 cd /app
-
-# Chạy backend với unbuffered output
 export PYTHONUNBUFFERED=1
+
+# Pre-check imports
 python -c "
 import sys
 sys.path.insert(0, '/app')
 sys.path.insert(0, '/app/backend')
-
-# Pre-load để kiểm tra lỗi import
 try:
     from app.services.analyzer import SentimentAnalyzer
     from app.services.crawler import CommentCrawler
-    print('✅ Imports successful')
+    print('✅ Imports OK')
 except Exception as e:
     print(f'❌ Import error: {e}')
     import traceback
@@ -57,68 +38,27 @@ except Exception as e:
 " || exit 1
 
 # Start uvicorn
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info --access-log &
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info &
 BACKEND_PID=$!
-echo "   Backend PID: $BACKEND_PID"
 
-# ============================================
-# 4. WAIT FOR BACKEND (tối đa 120 giây)
-# ============================================
-echo "⏳ Waiting for backend (max 120s)..."
-
-MAX_RETRIES=60
-RETRY=0
-while [ $RETRY -lt $MAX_RETRIES ]; do
+# 5. Wait for backend (max 120s)
+echo "⏳ Waiting for backend..."
+for i in {1..60}; do
     if curl -s --max-time 2 http://localhost:8000/api/v1/health 2>/dev/null | grep -q "healthy"; then
-        echo "✅ Backend is healthy!"
+        echo "✅ Backend ready!"
         break
     fi
-    
-    # Check if process still alive
     if ! kill -0 $BACKEND_PID 2>/dev/null; then
-        echo "❌ Backend process died!"
+        echo "❌ Backend died!"
         exit 1
     fi
-    
-    RETRY=$((RETRY + 1))
-    echo "   Attempt $RETRY/$MAX_RETRIES..."
     sleep 2
 done
 
-if [ $RETRY -eq $MAX_RETRIES ]; then
-    echo "❌ Backend failed to start after $MAX_RETRIES attempts"
-    kill $BACKEND_PID 2>/dev/null || true
-    exit 1
-fi
+# 6. Reload nginx
+nginx -s reload || true
 
-# Test endpoints
-echo "🔍 Testing endpoints..."
-curl -s http://localhost:8000/ | head -20 || echo "   Root check skipped"
-curl -s http://localhost:8000/api/v1/health || echo "   Health check warning"
+echo "✅ Service ready at port $PORT"
 
-# ============================================
-# 5. RELOAD NGINX VỚI PROXY
-# ============================================
-echo "🔄 Reloading nginx with proxy config..."
-nginx -s reload || nginx
-
-echo "✅ Service is ready!"
-echo "   Frontend: http://localhost:$PORT"
-echo "   Backend API: http://localhost:8000"
-
-# ============================================
-# 6. KEEP ALIVE
-# ============================================
-# Monitor backend
-while true; do
-    if ! kill -0 $BACKEND_PID 2>/dev/null; then
-        echo "❌ Backend crashed! Exiting..."
-        exit 1
-    fi
-    
-    if ! curl -s --max-time 5 http://localhost:8000/api/v1/health >/dev/null 2>&1; then
-        echo "⚠️ Backend health check failed"
-    fi
-    
-    sleep 30
-done
+# Keep alive
+wait $BACKEND_PID
