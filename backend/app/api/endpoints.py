@@ -1,4 +1,3 @@
-# backend/app/api/endpoints.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
@@ -11,7 +10,7 @@ router = APIRouter()
 
 class AnalyzeRequest(BaseModel):
     url: str
-    max_comments: Optional[int] = 25  # Giới hạn để tiết kiệm quota
+    max_comments: Optional[int] = 25
 
 class CommentDetail(BaseModel):
     text: str
@@ -33,42 +32,35 @@ class AnalysisResponse(BaseModel):
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_url(request: AnalyzeRequest):
-    """
-    Phân tích URL - Free 100% với độ chính xác cao nhất có thể
-    """
     job_id = str(uuid.uuid4())
     
     try:
-        print(f"🔍 [{job_id}] Bắt đầu crawl: {request.url}")
+        print(f"🔍 [{job_id}] Crawl: {request.url}")
         
-        # 1. CRAWL từ nhiều nguồn free
+        # Crawl
         crawl_result = await crawler.crawl(request.url, request.max_comments)
-        
         raw_comments = [c["text"] for c in crawl_result["comments"]]
         sources = crawl_result.get("sources", [])
         
         if not raw_comments:
             raise HTTPException(
                 status_code=400,
-                detail=f"Không thu thập được bình luận. "
-                       f"Đã thử: {', '.join(crawl_result.get('errors', ['không có nguồn nào']))}. "
-                       f"Vui lòng đăng ký ScrapingBee (1000 req free/tháng) tại scrapingbee.com"
+                detail=f"Không thu thập được. Đã thử: {crawl_result.get('errors', [])}"
             )
         
-        print(f"✓ [{job_id}] Thu thập {len(raw_comments)} bình luận từ: {sources}")
+        print(f"✓ [{job_id}] {len(raw_comments)} comments từ {sources}")
         
-        # 2. PHÂN TÍCH bằng Groq (free tier)
-        print(f"🤖 [{job_id}] Phân tích {len(raw_comments)} bình luận...")
+        # Phân tích
+        print(f"🤖 [{job_id}] Phân tích...")
         analyzed = await analyzer.analyze_batch(raw_comments)
         
-        # 3. PHÂN LOẠI 3 NHÓM
+        # Phân loại
         positive = [c for c in analyzed if c["sentiment"] == "positive"]
         negative = [c for c in analyzed if c["sentiment"] == "negative"]
         neutral = [c for c in analyzed if c["sentiment"] == "neutral"]
         
         total = len(analyzed)
         
-        # 4. TRẢ KẾT QUẢ CHI TIẾT
         return {
             "id": job_id,
             "url": request.url,
@@ -86,18 +78,11 @@ async def analyze_url(request: AnalyzeRequest):
             "negative_comments": negative,
             "neutral_comments": neutral,
             "sources": sources,
-            "message": f"✅ Phân tích thành công {total} bình luận từ {', '.join(sources)}"
+            "message": f"✅ Phân tích {total} bình luận từ {', '.join(sources)}"
         }
         
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ [{job_id}] Lỗi: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Lỗi hệ thống: {str(e)}. "
-                   f"Đảm bảo đã cấu hình SCRAPINGBEE_TOKEN và GROQ_API_KEY"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
