@@ -28,33 +28,48 @@ async def analyze_fanpage(request: PageAnalysisRequest):
         "error": None
     }
 
-    asyncio.create_task(simple_run(analysis_id, str(request.url), request.max_comments))
+    asyncio.create_task(run_analysis_fixed(analysis_id, str(request.url), request.max_comments))
 
     return AnalysisResponse(**analysis_store[analysis_id])
 
 
-async def simple_run(analysis_id: str, url: str, max_comments: int):
+async def run_analysis_fixed(analysis_id: str, url: str, max_comments: int):
     try:
-        logger.info("=== BẮT ĐẦU PHÂN TÍCH ===")
+        logger.info(f"🔍 Crawling: {url}")
         result = await crawler.crawl(url, max_comments or 50)
-        
-        logger.info(f"Type of result: {type(result)}")
-        logger.info(f"Keys: {list(result.keys()) if isinstance(result, dict) else 'Not dict'}")
-        
-        comments = result.get("comments", []) if isinstance(result, dict) else []
-        if isinstance(comments, int):
-            comments = []
-            
-        comments_list = [c["text"] if isinstance(c, dict) else c for c in comments if c]
+
+        logger.info(f"📦 Result type: {type(result)}")
+
+        # FIX CHÍNH: Xử lý an toàn
+        comments_data = result.get("comments") if isinstance(result, dict) else result
+
+        if isinstance(comments_data, int):   # Sai kiểu
+            logger.warning("comments là int, dùng total thay thế")
+            comments_data = []
+
+        if not isinstance(comments_data, list):
+            comments_data = []
+
+        # Lấy text
+        comments_list = []
+        for item in comments_data:
+            if isinstance(item, dict) and "text" in item:
+                comments_list.append(item["text"])
+            elif isinstance(item, str):
+                comments_list.append(item)
 
         total = len(comments_list)
         logger.info(f"✅ Crawled {total} comments")
 
         if total == 0:
-            analysis_store[analysis_id]["status"] = AnalysisStatus.COMPLETED
-            analysis_store[analysis_id]["summary"] = {"score": 0, "message": "No comments"}
+            analysis_store[analysis_id].update({
+                "status": AnalysisStatus.COMPLETED,
+                "completed_at": datetime.utcnow(),
+                "summary": {"score": 0, "message": "Không có bình luận"}
+            })
             return
 
+        # Phân tích
         analyzed = await analyzer.analyze_batch(comments_list)
 
         pos = sum(1 for x in analyzed if x.get("sentiment") == "positive")
@@ -72,10 +87,11 @@ async def simple_run(analysis_id: str, url: str, max_comments: int):
                 "score": score
             }
         })
-        logger.info(f"🎉 HOÀN THÀNH - Score: {score}")
+
+        logger.info(f"🎉 SUCCESS - Score: {score}")
 
     except Exception as e:
-        logger.exception(f"💥 LỖI: {e}")
+        logger.exception(f"💥 ERROR: {e}")
         analysis_store[analysis_id].update({
             "status": AnalysisStatus.FAILED,
             "error": str(e)
