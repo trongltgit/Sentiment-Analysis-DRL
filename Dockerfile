@@ -3,7 +3,6 @@ FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-# FIX: Remove --omit=dev to install devDependencies (including vite)
 RUN npm install --no-audit --no-fund
 
 COPY frontend/ ./
@@ -14,23 +13,38 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Cài system dependencies
+# Cài system dependencies - THÊM CHROMIUM
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     curl \
+    chromium \
+    chromium-driver \
+    libglib2.0-0 \
+    libnss3 \
+    libgconf-2-4 \
+    libfontconfig1 \
+    libxss1 \
+    libasound2 \
+    libxtst6 \
+    libgtk-3-0 \
+    libgbm-dev \
+    libxshmfence-dev \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && mkdir -p /app/logs /tmp /run/nginx
 
-# Cài Python dependencies (KHÔNG có torch)
+# Cài Python dependencies
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# CÀI TORCH CPU RIÊNG (cách đúng)
+# CÀI TORCH CPU
 RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu 
 
-# Cài transformers sau torch
+# Cài transformers
 RUN pip install --no-cache-dir transformers==4.35.0
+
+# CÀI PLAYWRIGHT BROWSER - THÊM MỚI
+RUN playwright install chromium
 
 # Copy backend code
 COPY backend/ ./backend/
