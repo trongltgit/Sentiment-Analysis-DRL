@@ -10,7 +10,7 @@ RUN npm run build
 
 # ==================== STAGE 2: Python Backend + Nginx ====================
 # Dùng image có sẵn Playwright dependencies
-FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
+FROM mcr.microsoft.com/playwright/python:latest
 
 WORKDIR /app
 
