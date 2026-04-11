@@ -13,12 +13,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Cài system dependencies
-RUN apt-get update && apt-get install -y \
+# Cài system dependencies (non-interactive)
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /app/logs /tmp
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
+    && mkdir -p /app/logs /tmp /run/nginx
 
 # Cài Python dependencies
 COPY backend/requirements.txt .
@@ -27,19 +28,24 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/ ./backend/
 
-# Đảm bảo có __init__.py cho tất cả packages
-RUN find backend -type d -exec touch {}/__init__.py \; 2>/dev/null || true
+# Đảm bảo __init__.py tồn tại
+RUN touch backend/__init__.py 2>/dev/null || true && \
+    find backend -type d -exec touch {}/__init__.py \; 2>/dev/null || true
 
-# Copy frontend build vào nginx
+# Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# Copy nginx config (xóa default trước để tránh conflict)
-RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf 2>/dev/null || true
-COPY frontend/nginx.conf /etc/nginx/conf.d/app.conf
+# Setup nginx: xóa default, copy config mới
+RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf /etc/nginx/nginx.conf.default
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy start script
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
 EXPOSE 10000
 
