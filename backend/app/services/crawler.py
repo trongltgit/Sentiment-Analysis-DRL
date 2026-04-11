@@ -17,20 +17,17 @@ class CommentCrawler:
             'facebook': r'facebook\.com',
             'youtube': r'youtube\.com|youtu\.be',
             'tiktok': r'tiktok\.com',
-            'shopee': r'shopee\.vn|shopee\.co\.id',
-            'lazada': r'lazada\.vn|lazada\.com'
+            'shopee': r'shopee\.vn|shopee\.co\.id|shopee\.com',
+            'lazada': r'lazada\.vn|lazada\.com',
+            'tiki': r'tiki\.vn'
         }
     
     async def crawl(self, url: str, max_comments: int = 100) -> List[Dict]:
         """
         Crawl comments từ URL
-        Trả về list các comment dict với keys: id, text, likes, timestamp
         """
         platform = self._detect_platform(url)
-        print(f"🔍 Phát hiện nền tảng: {platform}")
-        
-        # Trong production, đây sẽ gọi Selenium/Playwright thực sự
-        # Hiện tại: mô phỏng dữ liệu thực tế dựa trên platform
+        print(f"🔍 Platform detected: {platform}")
         
         if platform == "facebook":
             return await self._crawl_facebook(url, max_comments)
@@ -49,122 +46,6 @@ class CommentCrawler:
                 return platform
         return "generic"
     
-    async def _crawl_facebook(self, url: str, max: int) -> List[Dict]:
-        """Crawl comments từ Facebook"""
-        # TODO: Tích hợp facebook-scraper hoặc Selenium thực
-        # Hiện tại: Tạo dữ liệu đa dạng dựa trên đặc trưng Facebook
-        
-        seed = self._url_to_seed(url)
-        random.seed(seed)
-        
-        # Facebook comments thường ngắn, đa dạng sentiment
-        templates = self._get_facebook_templates()
-        
-        comments = []
-        n_comments = min(max, random.randint(50, 200))
-        
-        for i in range(n_comments):
-            sentiment_type = random.choices(
-                ['positive', 'negative', 'neutral', 'mixed'],
-                weights=[0.35, 0.25, 0.30, 0.10]
-            )[0]
-            
-            text = self._generate_realistic_comment(templates, sentiment_type, seed + i)
-            
-            comments.append({
-                "id": f"fb_{i}_{int(time.time())}",
-                "text": text,
-                "likes": random.randint(0, 500),
-                "replies": random.randint(0, 20),
-                "timestamp": self._random_timestamp(),
-                "platform": "facebook"
-            })
-        
-        return comments
-    
-    async def _crawl_youtube(self, url: str, max: int) -> List[Dict]:
-        """Crawl comments từ YouTube"""
-        seed = self._url_to_seed(url) + 1000
-        random.seed(seed)
-        
-        templates = self._get_youtube_templates()
-        comments = []
-        n_comments = min(max, random.randint(80, 300))
-        
-        for i in range(n_comments):
-            # YouTube có nhiều neutral/question hơn
-            sentiment_type = random.choices(
-                ['positive', 'negative', 'neutral', 'question'],
-                weights=[0.30, 0.20, 0.35, 0.15]
-            )[0]
-            
-            text = self._generate_realistic_comment(templates, sentiment_type, seed + i)
-            
-            comments.append({
-                "id": f"yt_{i}_{int(time.time())}",
-                "text": text,
-                "likes": random.randint(0, 1000),
-                "replies": random.randint(0, 50),
-                "timestamp": self._random_timestamp(),
-                "platform": "youtube"
-            })
-        
-        return comments
-    
-    async def _crawl_shopee(self, url: str, max: int) -> List[Dict]:
-        """Crawl reviews từ Shopee"""
-        seed = self._url_to_seed(url) + 2000
-        random.seed(seed)
-        
-        templates = self._get_shopee_templates()
-        comments = []
-        n_comments = min(max, random.randint(20, 100))
-        
-        for i in range(n_comments):
-            # Shopee thường là đánh giá sản phẩm
-            sentiment_type = random.choices(
-                ['positive', 'negative', 'neutral'],
-                weights=[0.50, 0.20, 0.30]  # Nhiều positive hơn
-            )[0]
-            
-            text = self._generate_realistic_comment(templates, sentiment_type, seed + i)
-            
-            comments.append({
-                "id": f"sp_{i}_{int(time.time())}",
-                "text": text,
-                "rating": 5 if sentiment_type == 'positive' else (1 if sentiment_type == 'negative' else 3),
-                "likes": random.randint(0, 50),
-                "has_image": random.random() > 0.7,
-                "timestamp": self._random_timestamp(),
-                "platform": "shopee"
-            })
-        
-        return comments
-    
-    async def _crawl_generic(self, url: str, max: int) -> List[Dict]:
-        """Crawl từ các trang khác"""
-        seed = self._url_to_seed(url)
-        random.seed(seed)
-        
-        comments = []
-        n_comments = min(max, random.randint(30, 80))
-        
-        for i in range(n_comments):
-            text = f"Review từ {urlparse(url).netloc}: " + random.choice([
-                "Sản phẩm rất tốt, đáng mua!", "Chất lượng ổn, giá hợp lý",
-                "Giao hàng chậm, cần cải thiện", "Không như mong đợi", "Tuyệt vời!"
-            ])
-            
-            comments.append({
-                "id": f"gen_{i}_{int(time.time())}",
-                "text": text,
-                "likes": random.randint(0, 30),
-                "timestamp": self._random_timestamp(),
-                "platform": "generic"
-            })
-        
-        return comments
-    
     def _url_to_seed(self, url: str) -> int:
         """Chuyển URL thành seed để tạo dữ liệu consistent"""
         return sum(ord(c) * (i + 1) for i, c in enumerate(url)) % 10000
@@ -176,9 +57,12 @@ class CommentCrawler:
         date = datetime.now() - timedelta(days=days_ago)
         return date.isoformat()
     
-    def _get_facebook_templates(self) -> Dict:
-        """Template comments Facebook thực tế"""
-        return {
+    async def _crawl_facebook(self, url: str, max: int) -> List[Dict]:
+        """Demo crawl Facebook"""
+        seed = self._url_to_seed(url)
+        random.seed(seed)
+        
+        templates = {
             'positive': [
                 "Sản phẩm tuyệt vời! Mình rất hài lòng 😍",
                 "Chất lượng quá tốt luôn, ủng hộ shop dài dài",
@@ -215,10 +99,39 @@ class CommentCrawler:
                 "Nhân viên nhiệt tình nhưng hàng giao sai màu"
             ]
         }
+        
+        comments = []
+        n_comments = min(max, random.randint(50, 200))
+        
+        for i in range(n_comments):
+            sentiment_type = random.choices(
+                ['positive', 'negative', 'neutral', 'mixed'],
+                weights=[0.35, 0.25, 0.30, 0.10]
+            )[0]
+            
+            text = random.choice(templates[sentiment_type])
+            
+            # Add variation
+            if random.random() > 0.5:
+                text += random.choice(["!", "!!", " 😊", " 👍", " ❤️", "", ".", "..."])
+            
+            comments.append({
+                "id": f"fb_{i}_{int(time.time())}",
+                "text": text,
+                "likes": random.randint(0, 500),
+                "replies": random.randint(0, 20),
+                "timestamp": self._random_timestamp(),
+                "platform": "facebook"
+            })
+        
+        return comments
     
-    def _get_youtube_templates(self) -> Dict:
-        """Template comments YouTube thực tế"""
-        return {
+    async def _crawl_youtube(self, url: str, max: int) -> List[Dict]:
+        """Demo crawl YouTube"""
+        seed = self._url_to_seed(url) + 1000
+        random.seed(seed)
+        
+        templates = {
             'positive': [
                 "Video hay quá! Cho em xin 1 tim ❤️",
                 "Content chất lượng, đăng ký ủng hộ ngay",
@@ -247,10 +160,35 @@ class CommentCrawler:
                 "Hướng dẫn chi tiết hơn được không bạn?"
             ]
         }
+        
+        comments = []
+        n_comments = min(max, random.randint(80, 300))
+        
+        for i in range(n_comments):
+            sentiment_type = random.choices(
+                ['positive', 'negative', 'neutral', 'question'],
+                weights=[0.30, 0.20, 0.35, 0.15]
+            )[0]
+            
+            text = random.choice(templates[sentiment_type])
+            
+            comments.append({
+                "id": f"yt_{i}_{int(time.time())}",
+                "text": text,
+                "likes": random.randint(0, 1000),
+                "replies": random.randint(0, 50),
+                "timestamp": self._random_timestamp(),
+                "platform": "youtube"
+            })
+        
+        return comments
     
-    def _get_shopee_templates(self) -> Dict:
-        """Template reviews Shopee thực tế"""
-        return {
+    async def _crawl_shopee(self, url: str, max: int) -> List[Dict]:
+        """Demo crawl Shopee"""
+        seed = self._url_to_seed(url) + 2000
+        random.seed(seed)
+        
+        templates = {
             'positive': [
                 "Đã nhận hàng, chất lượng tốt, đúng mô tả",
                 "Sản phẩm đẹp, giao nhanh, shop uy tín",
@@ -273,23 +211,58 @@ class CommentCrawler:
                 "Chất lượng trung bình, không nổi bật"
             ]
         }
+        
+        comments = []
+        n_comments = min(max, random.randint(20, 100))
+        
+        for i in range(n_comments):
+            sentiment_type = random.choices(
+                ['positive', 'negative', 'neutral'],
+                weights=[0.50, 0.20, 0.30]
+            )[0]
+            
+            text = random.choice(templates[sentiment_type])
+            
+            comments.append({
+                "id": f"sp_{i}_{int(time.time())}",
+                "text": text,
+                "rating": 5 if sentiment_type == 'positive' else (1 if sentiment_type == 'negative' else 3),
+                "likes": random.randint(0, 50),
+                "has_image": random.random() > 0.7,
+                "timestamp": self._random_timestamp(),
+                "platform": "shopee"
+            })
+        
+        return comments
     
-    def _generate_realistic_comment(self, templates: Dict, sentiment: str, seed: int) -> str:
-        """Tạo comment thực tế từ template"""
+    async def _crawl_generic(self, url: str, max: int) -> List[Dict]:
+        """Generic crawler"""
+        seed = self._url_to_seed(url)
         random.seed(seed)
         
-        if sentiment in templates:
-            base = random.choice(templates[sentiment])
-        else:
-            base = random.choice(templates.get('neutral', ['Bình thường']))
+        domain = urlparse(url).netloc
         
-        # Thêm biến thể để không giống nhau hoàn toàn
-        variations = ["!", "!!", " 😊", " 👍", " ❤️", "", ".", "..."]
-        if random.random() > 0.5:
-            base += random.choice(variations)
+        comments = []
+        n_comments = min(max, random.randint(30, 80))
         
-        return base
-
-
-# Singleton instance
-crawler = CommentCrawler()
+        texts = [
+            "Sản phẩm rất tốt, đáng mua!",
+            "Chất lượng ổn, giá hợp lý",
+            "Giao hàng chậm, cần cải thiện",
+            "Không như mong đợi",
+            "Tuyệt vời!",
+            "Bình thường, không có gì đặc biệt",
+            "Rất hài lòng với dịch vụ",
+            "Thất vọng về chất lượng"
+        ]
+        
+        for i in range(n_comments):
+            comments.append({
+                "id": f"gen_{i}_{int(time.time())}",
+                "text": f"[{domain}] {random.choice(texts)}",
+                "likes": random.randint(0, 30),
+                "timestamp": self._random_timestamp(),
+                "platform": "generic"
+            })
+        
+        return comments
