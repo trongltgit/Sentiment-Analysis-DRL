@@ -25,81 +25,68 @@ async def analyze_fanpage(request: PageAnalysisRequest):
         "created_at": datetime.utcnow(),
         "completed_at": None,
         "summary": None,
-        "error": None,
-        "comments_count": 0
+        "error": None
     }
 
-    # Chạy trực tiếp
-    asyncio.create_task(run_analysis_direct(analysis_id, str(request.url), request.max_comments))
+    asyncio.create_task(simple_run(analysis_id, str(request.url), request.max_comments))
 
     return AnalysisResponse(**analysis_store[analysis_id])
 
 
-async def run_analysis_direct(analysis_id: str, url: str, max_comments: int = 100):
+async def simple_run(analysis_id: str, url: str, max_comments: int):
     try:
-        logger.info(f"🔍 [START] Crawling {url}")
-
-        crawl_result = await crawler.crawl(url, max_comments)
-
-        # === FIX CHÍNH Ở ĐÂY ===
-        comments_data = crawl_result.get("comments", [])
-        if isinstance(comments_data, int):          # phòng trường hợp sai kiểu
-            comments_data = []
-
-        comments_list = []
-        for item in comments_data:
-            if isinstance(item, dict) and "text" in item:
-                comments_list.append(item["text"])
-            elif isinstance(item, str):
-                comments_list.append(item)
+        logger.info("=== BẮT ĐẦU PHÂN TÍCH ===")
+        result = await crawler.crawl(url, max_comments or 50)
+        
+        logger.info(f"Type of result: {type(result)}")
+        logger.info(f"Keys: {list(result.keys()) if isinstance(result, dict) else 'Not dict'}")
+        
+        comments = result.get("comments", []) if isinstance(result, dict) else []
+        if isinstance(comments, int):
+            comments = []
+            
+        comments_list = [c["text"] if isinstance(c, dict) else c for c in comments if c]
 
         total = len(comments_list)
-        logger.info(f"✓ Crawled {total} comments")
+        logger.info(f"✅ Crawled {total} comments")
 
         if total == 0:
-            analysis_store[analysis_id].update({
-                "status": AnalysisStatus.COMPLETED,
-                "completed_at": datetime.utcnow(),
-                "summary": {"score": 0, "message": "Không tìm thấy bình luận"}
-            })
+            analysis_store[analysis_id]["status"] = AnalysisStatus.COMPLETED
+            analysis_store[analysis_id]["summary"] = {"score": 0, "message": "No comments"}
             return
 
-        # Phân tích sentiment
         analyzed = await analyzer.analyze_batch(comments_list)
 
-        positive = sum(1 for x in analyzed if x.get("sentiment") == "positive")
-        negative = sum(1 for x in analyzed if x.get("sentiment") == "negative")
-        neutral = total - positive - negative
-        score = round((positive - negative) / total * 100, 2) if total > 0 else 0
+        pos = sum(1 for x in analyzed if x.get("sentiment") == "positive")
+        neg = sum(1 for x in analyzed if x.get("sentiment") == "negative")
+        score = round((pos - neg) / total * 100, 2) if total > 0 else 0
 
         analysis_store[analysis_id].update({
             "status": AnalysisStatus.COMPLETED,
             "completed_at": datetime.utcnow(),
-            "comments_count": total,
             "summary": {
-                "positive": positive,
-                "negative": negative,
-                "neutral": neutral,
+                "positive": pos,
+                "negative": neg,
+                "neutral": total - pos - neg,
                 "total": total,
                 "score": score
             }
         })
-
-        logger.info(f"🎉 SUCCESS! Score = {score}")
+        logger.info(f"🎉 HOÀN THÀNH - Score: {score}")
 
     except Exception as e:
-        logger.exception(f"❌ ERROR: {e}")
+        logger.exception(f"💥 LỖI: {e}")
         analysis_store[analysis_id].update({
             "status": AnalysisStatus.FAILED,
-            "error": str(e)[:200]
+            "error": str(e)
         })
 
 
-@router.get("/analysis/{analysis_id}", response_model=AnalysisResponse)
+@router.get("/analysis/{analysis_id}")
 async def get_analysis_result(analysis_id: str):
     if analysis_id not in analysis_store:
         raise HTTPException(status_code=404, detail="Not found")
-    return AnalysisResponse(**analysis_store[analysis_id])
+    return analysis_store[analysis_id]
 
 
 @router.get("/health")
