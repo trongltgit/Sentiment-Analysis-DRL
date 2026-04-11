@@ -2,9 +2,13 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
+# Copy package files
 COPY frontend/package*.json ./
-RUN npm ci --only=production --no-audit --no-fund
 
+# FIX: Dùng npm install thay vì npm ci với --only (npm ci không hỗ trợ --only)
+RUN npm install --omit=dev --no-audit --no-fund
+
+# Copy source và build
 COPY frontend/ ./
 RUN npm run build
 
@@ -13,7 +17,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Cài system dependencies (non-interactive)
+# Cài system dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
@@ -35,17 +39,13 @@ RUN touch backend/__init__.py 2>/dev/null || true && \
 # Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# Setup nginx: xóa default, copy config mới
-RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf /etc/nginx/nginx.conf.default
+# Setup nginx
+RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf 2>/dev/null || true
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy start script
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/api/v1/health || exit 1
 
 EXPOSE 10000
 
