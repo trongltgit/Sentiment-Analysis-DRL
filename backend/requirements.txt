@@ -15,9 +15,9 @@ python-dotenv==1.0.0
 celery==5.3.4
 redis==5.0.1
 
-# HuggingFace - Tối ưu download và load model
+# HuggingFace
 huggingface-hub>=0.19.0
 safetensors>=0.4.0
-tqdm>=4.65.0  # Progress bar khi download
 
-# Lưu ý: torch và transformers sẽ được cài riêng trong Dockerfile
+# Browser automation - THÊM MỚI
+playwright>=1.40.0
