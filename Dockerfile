@@ -2,13 +2,9 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 
-# Copy package files
 COPY frontend/package*.json ./
-
-# FIX: Dùng npm install thay vì npm ci với --only (npm ci không hỗ trợ --only)
 RUN npm install --omit=dev --no-audit --no-fund
 
-# Copy source và build
 COPY frontend/ ./
 RUN npm run build
 
@@ -25,16 +21,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && mkdir -p /app/logs /tmp /run/nginx
 
-# Cài Python dependencies
+# Cài Python dependencies (KHÔNG có torch)
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# CÀI TORCH CPU RIÊNG (cách đúng)
+RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+
+# Cài transformers sau torch
+RUN pip install --no-cache-dir transformers==4.35.0
 
 # Copy backend code
 COPY backend/ ./backend/
 
-# Đảm bảo __init__.py tồn tại
-RUN touch backend/__init__.py 2>/dev/null || true && \
-    find backend -type d -exec touch {}/__init__.py \; 2>/dev/null || true
+# Đảm bảo __init__.py
+RUN find backend -type d -exec touch {}/__init__.py \; 2>/dev/null || true
 
 # Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
