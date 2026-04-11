@@ -8,9 +8,10 @@ numpy==1.24.3
 
 # Utilities
 pydantic==2.5.0
+pydantic-settings==2.1.0  # <-- THÊM DÒNG NÀY
 python-dotenv==1.0.0
 
-# Celery (bổ sung)
+# Celery
 celery==5.3.4
 redis==5.0.1
 
