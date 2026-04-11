@@ -3,13 +3,11 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 
-# Deep Learning - CPU only (nhẹ hơn 2GB!)
---index-url https://download.pytorch.org/whl/cpu
-torch==2.1.0+cpu
---index-url https://pypi.org/simple
-transformers==4.35.0
+# Data Processing
 numpy==1.24.3
 
 # Utilities
 pydantic==2.5.0
 python-dotenv==1.0.0
+
+# Lưu ý: torch và transformers sẽ được cài riêng trong Dockerfile
