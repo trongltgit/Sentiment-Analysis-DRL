@@ -9,8 +9,8 @@ COPY frontend/ ./
 RUN npm run build
 
 # ==================== STAGE 2: Python Backend + Nginx ====================
-# Dùng image có sẵn Playwright dependencies
-FROM mcr.microsoft.com/playwright/python:latest
+# SỬA: Dùng đúng version 1.58.0
+FROM mcr.microsoft.com/playwright/python:v1.58.0-jammy
 
 WORKDIR /app
 
@@ -28,6 +28,9 @@ RUN pip install --no-cache-dir torch==2.1.0 --index-url https://download.pytorch
 
 # Cài transformers
 RUN pip install --no-cache-dir transformers==4.35.0
+
+# Đảm bảo playwright version khớp
+RUN pip install playwright==1.58.0
 
 # Copy backend code
 COPY backend/ ./backend/
