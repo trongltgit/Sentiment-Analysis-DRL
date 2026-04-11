@@ -1,10 +1,10 @@
 # backend/app/services/crawler.py
 import asyncio
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async  # Thêm thư viện này
 from typing import List, Dict, Set
 import hashlib
 import re
-from urllib.parse import urlparse
 
 
 class CommentCrawler:
@@ -12,7 +12,6 @@ class CommentCrawler:
         self.seen_hashes: Set[str] = set()
     
     def _hash(self, text: str) -> str:
-        """Hash để lọc trùng"""
         normalized = re.sub(r'[^\w\s]', '', text.lower().strip())
         normalized = ' '.join(normalized.split())
         return hashlib.md5(normalized.encode()).hexdigest()[:12]
@@ -25,26 +24,21 @@ class CommentCrawler:
         return False
     
     def _is_valid(self, text: str) -> bool:
-        """Lọc spam/invalid"""
         if not text or len(text.strip()) < 10:
             return False
-        # Bỏ link
         if re.search(r'http|www\.|\.com|\.vn|bit\.ly', text.lower()):
             return False
-        # Bỏ emoji-only
         letters = re.sub(r'[^\w\s]', '', text)
         if len(letters) < 5:
             return False
         return True
     
     async def crawl_facebook(self, url: str, max_comments: int = 50) -> List[str]:
-        """
-        Crawl Facebook comments bằng Playwright (browser thật)
-        Lưu ý: Facebook thường yêu cầu đăng nhập để xem comments đầy đủ
-        """
+        """Crawl Facebook với stealth mode để tránh bị chặn"""
         comments = []
         
         async with async_playwright() as p:
+            # Launch với args chống phát hiện
             browser = await p.chromium.launch(
                 headless=True,
                 args=[
@@ -52,140 +46,141 @@ class CommentCrawler:
                     '--disable-dev-shm-usage',
                     '--disable-gpu',
                     '--disable-web-security',
-                    '--disable-features=IsolateOrigins,site-per-process'
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    # Thêm args chống phát hiện
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-automation',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--window-size=1920,1080',
                 ]
             )
             
             context = await browser.new_context(
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 viewport={'width': 1920, 'height': 1080},
-                locale='vi-VN'
+                locale='vi-VN',
+                timezone_id='Asia/Ho_Chi_Minh',
+                # Giả lập máy thật
+                permissions=['notifications'],
+                color_scheme='light',
             )
             
             page = await context.new_page()
             
+            # Thêm stealth script
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+                window.chrome = { runtime: {} };
+            """)
+            
             try:
                 print(f"🔍 Đang mở {url}...")
-                await page.goto(url, wait_until='domcontentloaded', timeout=60000)
                 
-                # Đợi trang load
-                await page.wait_for_timeout(5000)
+                # Đi đến trang với timeout dài hơn
+                response = await page.goto(
+                    url, 
+                    wait_until='domcontentloaded',
+                    timeout=60000
+                )
                 
-                # Tìm và click "Xem thêm bình luận" nếu có
-                for _ in range(3):
-                    try:
-                        # Các selector khác nhau cho nút "Xem thêm"
-                        selectors = [
-                            'text="Xem thêm bình luận"',
-                            'text="View more comments"',
-                            '[role="button"]:has-text("bình luận")',
-                            'div[role="button"]:has-text("Xem")'
-                        ]
-                        
-                        for sel in selectors:
-                            try:
-                                btn = await page.query_selector(sel)
-                                if btn:
-                                    await btn.click()
-                                    await page.wait_for_timeout(2000)
-                                    break
-                            except:
-                                continue
-                    except:
-                        break
+                print(f"  ✓ Page loaded: {response.status if response else 'unknown'}")
                 
-                # Cuộn để load thêm comments (lazy load)
-                for _ in range(5):
-                    await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
-                    await page.wait_for_timeout(2000)
+                # Đợi lâu hơn cho Facebook render
+                await page.wait_for_timeout(8000)
                 
-                # Trích xuất comments - Cần cập nhật selector theo cấu trúc Facebook thực tế
-                # Lưu ý: Facebook thay đổi selector thường xuyên
-                possible_selectors = [
-                    # Các selector phổ biến cho Facebook comments
+                # Chụp ảnh debug (tùy chọn)
+                # await page.screenshot(path='/tmp/debug.png')
+                
+                # Tìm comments với nhiều selector khác nhau
+                selectors = [
+                    # Facebook comment selectors (thay đổi thường xuyên)
+                    '[data-testid="UFI2Comment/body"] span',
                     'div[role="article"] div[data-ad-preview="message"] span',
                     'div[role="article"] span[dir="auto"]',
-                    'div[data-testid="UFI2Comment/body"] span',
                     'div[aria-label*="bình luận"] span',
                     'div[aria-label*="comment"] span',
-                    # Selector chung hơn
-                    'div[role="main"] div[dir="auto"] span',
-                    'div.x1y1aw1k span.x193iq5w',  # Class-based (hay thay đổi)
+                    # Generic
+                    '.userContent',
+                    '.text_exposed_root',
                 ]
                 
-                for selector in possible_selectors:
-                    elements = await page.query_selector_all(selector)
-                    print(f"  Thử selector '{selector}': {len(elements)} elements")
-                    
-                    for element in elements:
-                        try:
-                            text = await element.inner_text()
-                            if self._is_valid(text) and not self._is_duplicate(text):
-                                comments.append(text.strip())
-                                print(f"  ✓ Tìm thấy: {text[:50]}...")
-                                
-                                if len(comments) >= max_comments:
-                                    break
-                        except:
-                            continue
-                    
-                    if len(comments) >= max_comments:
-                        break
+                for selector in selectors:
+                    try:
+                        elements = await page.query_selector_all(selector)
+                        print(f"  Thử selector '{selector}': {len(elements)} elements")
+                        
+                        for element in elements:
+                            try:
+                                text = await element.inner_text()
+                                if self._is_valid(text) and not self._is_duplicate(text):
+                                    comments.append(text.strip())
+                                    print(f"    ✓ Tìm thấy: {text[:60]}...")
+                                    
+                                    if len(comments) >= max_comments:
+                                        break
+                            except:
+                                continue
+                        
+                        if len(comments) >= max_comments:
+                            break
+                            
+                    except Exception as e:
+                        print(f"    ✗ Selector lỗi: {e}")
+                        continue
                 
-                # Nếu vẫn không có, thử trích xuất tất cả text
+                # Nếu vẫn không có, thử JavaScript evaluation
                 if not comments:
-                    print("  ⚠️ Không tìm thấy bằng selector, thử trích xuất tất cả text...")
-                    all_texts = await page.evaluate('''() => {
-                        return Array.from(document.querySelectorAll('div[role="article"] span, div[dir="auto"] span'))
-                            .map(el => el.innerText)
-                            .filter(text => text.length > 20 && text.length < 500);
+                    print("  ⚠️ Thử trích xuất bằng JavaScript...")
+                    js_comments = await page.evaluate('''() => {
+                        const texts = [];
+                        const elements = document.querySelectorAll('div[role="article"] span, div[dir="auto"] span, .userContent');
+                        elements.forEach(el => {
+                            const text = el.innerText.trim();
+                            if (text.length > 20 && text.length < 500) {
+                                texts.push(text);
+                            }
+                        });
+                        return texts;
                     }''')
                     
-                    for text in all_texts:
+                    for text in js_comments:
                         if self._is_valid(text) and not self._is_duplicate(text):
-                            comments.append(text.strip())
+                            comments.append(text)
                             if len(comments) >= max_comments:
                                 break
                 
             except Exception as e:
-                print(f"❌ Lỗi crawl: {e}")
+                print(f"❌ Lỗi crawl: {type(e).__name__}: {e}")
                 import traceback
                 traceback.print_exc()
             
             finally:
                 await browser.close()
         
-        print(f"✅ Tìm thấy {len(comments)} bình luận thật")
+        print(f"✅ Tổng cộng tìm thấy {len(comments)} bình luận")
         return comments
     
-    async def crawl(self, url: str, max_comments: int = 50) -> Dict[str, List[Dict]]:
-        """
-        Crawl và trả về dạng phân loại sẵn (good/bad/neutral)
-        Nhưng dùng AI model để phân loại thay vì rule-based
-        """
-        platform = self._detect_platform(url)
+    async def crawl(self, url: str, max_comments: int = 50) -> Dict:
+        """Crawl và trả về kết quả"""
+        platform = "facebook" if "facebook" in url.lower() else "generic"
         
         if platform == "facebook":
             raw_comments = await self.crawl_facebook(url, max_comments)
         else:
-            # Các platform khác - tương tự
             raw_comments = []
         
-        # Trả về dạng đơn giản để AI model phân loại sau
-        result = {
+        return {
             "comments": [{"text": c, "id": f"real_{i}"} for i, c in enumerate(raw_comments)],
             "total": len(raw_comments),
             "platform": platform,
             "source": "real_crawl"
         }
-        
-        return result
-    
-    def _detect_platform(self, url: str) -> str:
-        u = url.lower()
-        if "facebook" in u: return "facebook"
-        if "youtube" in u: return "youtube"
-        return "generic"
 
 
 # Singleton
