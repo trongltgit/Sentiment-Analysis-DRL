@@ -6,7 +6,7 @@ from typing import List, Dict
 
 class SentimentAnalyzer:
     def __init__(self):
-        self.api_key = os.getenv("GROQ_API_KEY+DRL")
+        self.api_key = os.getenv("GROQ_API_KEY_DRL")
         if not self.api_key:
             raise ValueError("Thiếu GROQ_API_KEY_DRL")
         self.url = "https://api.groq.com/openai/v1/chat/completions"
