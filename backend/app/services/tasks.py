@@ -13,7 +13,7 @@ analysis_store = {}
 @shared_task(bind=True, max_retries=3, soft_time_limit=300)
 def analyze_fanpage_task(self, analysis_id: str, url: str, max_comments: int = 100):
     try:
-        logger.info(f"🚀 TASK START | ID: {analysis_id} | URL: {url}")
+        logger.info(f"🚀 TASK START | ID={analysis_id} | URL={url}")
 
         analysis_store[analysis_id] = {
             "id": analysis_id,
@@ -26,47 +26,41 @@ def analyze_fanpage_task(self, analysis_id: str, url: str, max_comments: int = 1
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        # ====================== CRAWL ======================
+        # Crawl comments
+        logger.info("🔍 Đang crawl bằng ScrapingBee...")
         crawl_result = loop.run_until_complete(crawler.crawl(url, max_comments))
 
-        logger.info(f"📦 Crawl result type: {type(crawl_result)}")
-
-        # BẢO VỆ SIÊU MẠNH
-        if not isinstance(crawl_result, dict):
-            raise TypeError(f"Crawler trả về sai kiểu: {type(crawl_result)}")
-
-        comments_data = crawl_result.get("comments", [])
-        total_from_crawler = crawl_result.get("total", 0)
-
-        logger.info(f"✓ ScrapingBee/others: {total_from_crawler} comments | Type of comments: {type(comments_data)}")
-
-        # Extract comments an toàn
+        # === BẢO VỆ MẠNH ===
+        comments_data = crawl_result.get("comments", []) if isinstance(crawl_result, dict) else []
+        
+        # Extract text
         comments_list = []
-        if isinstance(comments_data, list):
-            for item in comments_data:
-                if isinstance(item, dict) and "text" in item:
-                    comments_list.append(item["text"])
-                elif isinstance(item, str):
-                    comments_list.append(item)
-        else:
-            logger.error(f"comments_data không phải list mà là {type(comments_data)}")
+        for item in comments_data:
+            if isinstance(item, dict) and "text" in item:
+                text = item["text"]
+                if isinstance(text, str):
+                    comments_list.append(text)
+            elif isinstance(item, str):
+                comments_list.append(item)
 
         total_comments = len(comments_list)
-        logger.info(f"✅ Chuẩn bị phân tích {total_comments} comments")
+        logger.info(f"✓ Crawled {total_comments} comments (from ScrapingBee)")
 
         if total_comments == 0:
             analysis_store[analysis_id].update({
                 "status": "completed",
                 "completed_at": datetime.utcnow(),
                 "comments_count": 0,
-                "summary": {"positive": 0, "negative": 0, "neutral": 0, "score": 0, "message": "Không tìm thấy bình luận"}
+                "summary": {"score": 0, "message": "Không tìm thấy bình luận"}
             })
             loop.close()
             return {"status": "completed", "comments_count": 0}
 
-        # ====================== SENTIMENT ANALYSIS ======================
+        # Sentiment analysis
+        logger.info(f"🤖 Phân tích sentiment cho {total_comments} comments...")
         analyzed = loop.run_until_complete(analyzer.analyze_batch(comments_list))
 
+        # Calculate summary
         positive = sum(1 for x in analyzed if x.get("sentiment") == "positive")
         negative = sum(1 for x in analyzed if x.get("sentiment") == "negative")
         neutral = total_comments - positive - negative
@@ -85,19 +79,19 @@ def analyze_fanpage_task(self, analysis_id: str, url: str, max_comments: int = 1
             "completed_at": datetime.utcnow(),
             "comments_count": total_comments,
             "summary": summary,
-            "details": analyzed[:25]
+            "details": analyzed[:20]
         })
 
-        logger.info(f"🎉 TASK SUCCESS | Score: {score} | Positive: {positive}/{total_comments}")
+        logger.info(f"🎉 TASK SUCCESS | Score: {score}")
         loop.close()
         return {"status": "success", "score": score}
 
     except Exception as exc:
-        logger.exception(f"💥 TASK FAILED: {exc}")
+        logger.exception(f"💥 TASK ERROR: {exc}")
         analysis_store[analysis_id] = analysis_store.get(analysis_id, {})
         analysis_store[analysis_id].update({
             "status": "failed",
             "completed_at": datetime.utcnow(),
-            "error": str(exc)[:250]
+            "error": str(exc)[:300]
         })
         raise
