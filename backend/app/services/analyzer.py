@@ -186,3 +186,62 @@ class SentimentAnalyzer:
             batch_results = [self.analyze(t, depth) for t in batch]
             results.extend(batch_results)
         return results
+
+
+# Thêm vào cuối file analyzer.py hiện tại
+
+    async def analyze_batch_async(self, comments: List[Dict], depth: str = "standard") -> List[Dict]:
+        """
+        Phân tích batch comments (async version)
+        Trả về list comment đã thêm sentiment analysis
+        """
+        results = []
+        
+        for comment in comments:
+            text = comment.get("text", "")
+            if not text:
+                continue
+            
+            # Phân tích sentiment
+            analysis = self.analyze(text, depth)
+            
+            # Merge với data gốc
+            enriched_comment = {
+                **comment,
+                "sentiment": analysis["overall"],
+                "confidence": round(analysis["confidence"], 3),
+                "sentiment_probs": analysis.get("raw_probs", {}),
+                "aspects": analysis.get("aspects", {}),
+                "emotions": analysis.get("emotions", {}) if depth == "deep" else None,
+                "cleaned_text": analysis.get("cleaned_text", text)
+            }
+            
+            results.append(enriched_comment)
+        
+        return results
+    
+    def categorize_comments(self, comments: List[Dict]) -> Dict:
+        """
+        Phân loại comments thành positive, negative, neutral
+        Trả về dict với 3 danh sách
+        """
+        categories = {
+            "positive": [],
+            "negative": [],
+            "neutral": []
+        }
+        
+        for c in comments:
+            sentiment = c.get("sentiment", "neutral")
+            if sentiment in categories:
+                categories[sentiment].append(c)
+        
+        # Sắp xếp theo confidence cao nhất
+        for key in categories:
+            categories[key].sort(key=lambda x: x.get("confidence", 0), reverse=True)
+        
+        return categories
+
+
+# Singleton instance
+analyzer = SentimentAnalyzer()
