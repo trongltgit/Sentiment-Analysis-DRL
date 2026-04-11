@@ -1,86 +1,100 @@
+# backend/app/services/tasks.py
 """
-Background tasks for Celery
+Background tasks for Celery - Phiên bản đã fix
 """
-from app.celery_app import celery_app
-from app.services.scraper import FacebookScraper
-from app.services.analyzer import SentimentAnalyzer
-from app.services.drl_agent import DRLAgentService
 import asyncio
 import logging
+from datetime import datetime
+from celery import shared_task
+from app.services.crawler import crawler
+from app.services.analyzer import analyzer
 
 logger = logging.getLogger(__name__)
 
+# In-memory store (tạm thời - sau này nên thay bằng database)
+analysis_store = {}
 
-@celery_app.task(bind=True, max_retries=3)
-def analyze_fanpage_task(self, analysis_id: str, url: str, max_comments: int, depth: str):
+@shared_task(bind=True, max_retries=3, soft_time_limit=300)
+def analyze_fanpage_task(self, analysis_id: str, url: str, max_comments: int = 100, depth: str = "basic"):
     """
-    Background task for fanpage analysis
+    Task phân tích Fanpage Facebook
     """
     try:
-        # Run async code in sync context
+        logger.info(f"🔍 Bắt đầu task {analysis_id} cho URL: {url}")
+
+        # Cập nhật trạng thái đang xử lý
+        analysis_store[analysis_id] = {
+            "id": analysis_id,
+            "url": url,
+            "status": "processing",
+            "created_at": datetime.utcnow(),
+            "completed_at": None,
+        }
+
+        # === 1. CRAWL COMMENTS ===
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        # Step 1: Scrape
-        scraper = FacebookScraper()
-        comments = loop.run_until_complete(scraper.scrape_comments(url, max_comments))
+        crawl_result = loop.run_until_complete(crawler.crawl(url, max_comments))
         
-        # Step 2: Analyze
-        analyzer = SentimentAnalyzer()
-        analyzed = loop.run_until_complete(analyzer.analyze_batch(comments, depth))
-        
-        # Step 3: DRL Optimization
-        drl = DRLAgentService()
-        optimized = loop.run_until_complete(drl.optimize_analysis(analyzed))
-        
-        # Update database with results
-        from app.api.routes import analysis_store
-        from datetime import datetime
-        
+        comments_list = [c["text"] for c in crawl_result.get("comments", [])]
+        total_comments = len(comments_list)
+
+        logger.info(f"✓ Crawled {total_comments} comments from {crawl_result.get('source', 'none')}")
+
+        if total_comments == 0:
+            analysis_store[analysis_id].update({
+                "status": "completed",
+                "completed_at": datetime.utcnow(),
+                "comments_count": 0,
+                "summary": {"positive": 0, "negative": 0, "neutral": 0, "score": 0, "message": "Không tìm thấy bình luận"}
+            })
+            loop.close()
+            return {"status": "completed", "comments_count": 0}
+
+        # === 2. ANALYZE SENTIMENT ===
+        logger.info(f"🤖 Phân tích sentiment cho {total_comments} bình luận...")
+        analyzed = loop.run_until_complete(analyzer.analyze_batch(comments_list))
+
+        # === 3. Tính toán summary ===
+        positive = sum(1 for x in analyzed if x["sentiment"] == "positive")
+        negative = sum(1 for x in analyzed if x["sentiment"] == "negative")
+        neutral = total_comments - positive - negative
+
+        score = round(((positive - negative) / total_comments) * 100, 2) if total_comments > 0 else 0
+
+        summary = {
+            "positive": positive,
+            "negative": negative,
+            "neutral": neutral,
+            "total": total_comments,
+            "score": score,
+            "sentiment": "positive" if score > 20 else "negative" if score < -20 else "neutral"
+        }
+
+        # Cập nhật kết quả cuối cùng
         analysis_store[analysis_id].update({
             "status": "completed",
             "completed_at": datetime.utcnow(),
-            "comments": optimized,
-            "summary": analyzer.generate_summary(optimized)
+            "comments_count": total_comments,
+            "summary": summary,
+            "details": analyzed[:30],   # chỉ lưu 30 mẫu
+            "source": crawl_result.get("source")
+        })
+
+        logger.info(f"✅ Hoàn thành task {analysis_id} | Score: {score}")
+
+        loop.close()
+        return {"status": "success", "comments_count": total_comments, "score": score}
+
+    except Exception as exc:
+        logger.exception(f"❌ Task {analysis_id} failed")
+        
+        analysis_store[analysis_id] = analysis_store.get(analysis_id, {})
+        analysis_store[analysis_id].update({
+            "status": "failed",
+            "completed_at": datetime.utcnow(),
+            "error": str(exc)
         })
         
-        loop.close()
-        
-        return {"status": "success", "comments_count": len(optimized)}
-        
-    except Exception as exc:
-        logger.error(f"Analysis failed: {exc}")
-        # Retry with exponential backoff
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
-
-
-@celery_app.task
-def cleanup_old_analyses():
-    """Remove analyses older than 24 hours"""
-    from app.api.routes import analysis_store
-    from datetime import datetime, timedelta
-    
-    cutoff = datetime.utcnow() - timedelta(hours=24)
-    to_remove = [
-        aid for aid, data in analysis_store.items() 
-        if data.get("created_at") < cutoff
-    ]
-    
-    for aid in to_remove:
-        del analysis_store[aid]
-    
-    return {"cleaned": len(to_remove)}
-
-
-@celery_app.task
-def warm_up_models():
-    """Keep models warm to prevent cold start"""
-    import torch
-    from app.models.sentiment_model import DRLPolicyNetwork
-    
-    # Simple forward pass to keep GPU/CPU warm
-    model = DRLPolicyNetwork()
-    dummy_input = torch.randn(1, 793)  # State dimension
-    _ = model(dummy_input)
-    
-    return {"status": "warmed"}
