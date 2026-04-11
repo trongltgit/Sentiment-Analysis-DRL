@@ -23,28 +23,40 @@ async def analyze_fanpage(request: PageAnalysisRequest):
         "status": AnalysisStatus.PROCESSING,
         "url": str(request.url),
         "created_at": datetime.utcnow(),
-        "max_comments": request.max_comments,
         "completed_at": None,
         "summary": None,
-        "error": None
+        "error": None,
+        "comments_count": 0
     }
 
-    # Chạy trực tiếp (không Celery) để test nhanh
-    asyncio.create_task(run_analysis(analysis_id, str(request.url), request.max_comments))
+    # Chạy trực tiếp
+    asyncio.create_task(run_analysis_direct(analysis_id, str(request.url), request.max_comments))
 
     return AnalysisResponse(**analysis_store[analysis_id])
 
 
-async def run_analysis(analysis_id: str, url: str, max_comments: int = 100):
+async def run_analysis_direct(analysis_id: str, url: str, max_comments: int = 100):
     try:
-        logger.info(f"🔍 Bắt đầu crawl: {url}")
-        
+        logger.info(f"🔍 [START] Crawling {url}")
+
         crawl_result = await crawler.crawl(url, max_comments)
-        comments_list = [c["text"] for c in crawl_result.get("comments", []) if isinstance(c, dict) and "text" in c]
 
-        logger.info(f"✓ Crawled {len(comments_list)} comments")
+        # === FIX CHÍNH Ở ĐÂY ===
+        comments_data = crawl_result.get("comments", [])
+        if isinstance(comments_data, int):          # phòng trường hợp sai kiểu
+            comments_data = []
 
-        if not comments_list:
+        comments_list = []
+        for item in comments_data:
+            if isinstance(item, dict) and "text" in item:
+                comments_list.append(item["text"])
+            elif isinstance(item, str):
+                comments_list.append(item)
+
+        total = len(comments_list)
+        logger.info(f"✓ Crawled {total} comments")
+
+        if total == 0:
             analysis_store[analysis_id].update({
                 "status": AnalysisStatus.COMPLETED,
                 "completed_at": datetime.utcnow(),
@@ -52,29 +64,31 @@ async def run_analysis(analysis_id: str, url: str, max_comments: int = 100):
             })
             return
 
+        # Phân tích sentiment
         analyzed = await analyzer.analyze_batch(comments_list)
 
         positive = sum(1 for x in analyzed if x.get("sentiment") == "positive")
         negative = sum(1 for x in analyzed if x.get("sentiment") == "negative")
-        neutral = len(comments_list) - positive - negative
-        score = round((positive - negative) / len(comments_list) * 100, 2) if comments_list else 0
+        neutral = total - positive - negative
+        score = round((positive - negative) / total * 100, 2) if total > 0 else 0
 
         analysis_store[analysis_id].update({
             "status": AnalysisStatus.COMPLETED,
             "completed_at": datetime.utcnow(),
-            "comments_count": len(comments_list),
+            "comments_count": total,
             "summary": {
                 "positive": positive,
                 "negative": negative,
                 "neutral": neutral,
-                "total": len(comments_list),
+                "total": total,
                 "score": score
             }
         })
-        logger.info(f"✅ Hoàn thành! Score: {score}")
+
+        logger.info(f"🎉 SUCCESS! Score = {score}")
 
     except Exception as e:
-        logger.exception(f"❌ Lỗi phân tích: {e}")
+        logger.exception(f"❌ ERROR: {e}")
         analysis_store[analysis_id].update({
             "status": AnalysisStatus.FAILED,
             "error": str(e)[:200]
@@ -84,10 +98,10 @@ async def run_analysis(analysis_id: str, url: str, max_comments: int = 100):
 @router.get("/analysis/{analysis_id}", response_model=AnalysisResponse)
 async def get_analysis_result(analysis_id: str):
     if analysis_id not in analysis_store:
-        raise HTTPException(status_code=404, detail="Analysis not found")
+        raise HTTPException(status_code=404, detail="Not found")
     return AnalysisResponse(**analysis_store[analysis_id])
 
 
 @router.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.utcnow()}
+    return {"status": "healthy"}
