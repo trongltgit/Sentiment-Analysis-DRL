@@ -44,7 +44,7 @@ class AnalysisResponse(BaseModel):
     error: Optional[str] = None
 
 # ============================================
-# ✅ ĐÃ SỬA: Chuyển từ "/" sang "/api/"
+# ✅ API Root - Không chiếm "/" nữa
 # ============================================
 @app.get("/api/")
 def api_root():
@@ -97,12 +97,6 @@ def get_job(job_id: str):
 
 @app.get("/api/v1/analysis/{job_id}/{category}")
 def get_category(job_id: str, category: str):
-    """
-    Lấy bình luận theo nhóm:
-    - good: Tích cực
-    - bad: Tiêu cực  
-    - neutral: Trung lập
-    """
     if job_id not in jobs:
         raise HTTPException(404, "Không tìm thấy job")
     if category not in ["good", "bad", "neutral"]:
