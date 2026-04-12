@@ -60,12 +60,12 @@ class CommentCrawler:
         
         print(f"📊 Total unique comments: {len(final_comments)}")
         
-        # PHÂN LOẠI SENTIMENT
-        classified = self._classify_comments(final_comments, url)
+        # ✅ FIX: Truyền sources_used vào _classify_comments
+        classified = self._classify_comments(final_comments, url, sources_used)
         
         return classified
     
-    def _classify_comments(self, comments: List[str], url: str) -> Dict:
+    def _classify_comments(self, comments: List[str], url: str, sources_used: List[str]) -> Dict:
         """Phân loại comments thành good/bad/neutral dựa trên từ khóa"""
         
         good_keywords = [
@@ -269,7 +269,7 @@ class CommentCrawler:
             return False
         if len(re.sub(r'[^\w\s]', '', text)) < 10:
             return False
-        # ✅ FIX: Đếm số digit đúng cách
+        # Đếm số digit đúng cách
         digit_count = len([c for c in text if c.isdigit()])
         if digit_count > len(text) * 0.3:
             return False
