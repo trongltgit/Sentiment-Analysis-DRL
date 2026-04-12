@@ -12,6 +12,7 @@ from datetime import datetime
 import os
 import sys
 import time
+import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -45,9 +46,7 @@ class AnalysisResponse(BaseModel):
     processing_time: Optional[float] = None
     error: Optional[str] = None
 
-# ============================================
-# Mount static files (assets)
-# ============================================
+# Mount static files
 app.mount("/assets", StaticFiles(directory="/usr/share/nginx/html/assets"), name="assets")
 
 # ============================================
@@ -153,6 +152,12 @@ async def process(job_id: str, req: AnalyzeRequest):
         print(f"🔍 Đang phân tích: {req.url}")
         result = await crawler.crawl(req.url, req.max_comments)
         
+        # ✅ Log kết quả
+        print(f"📊 Crawl result keys: {result.keys()}")
+        print(f"   Good: {len(result.get('good', []))}")
+        print(f"   Bad: {len(result.get('bad', []))}")
+        print(f"   Neutral: {len(result.get('neutral', []))}")
+        
         proc_time = time.time() - start
         
         job.update({
@@ -160,11 +165,11 @@ async def process(job_id: str, req: AnalyzeRequest):
             "completed_at": datetime.now().isoformat(),
             "processing_time": round(proc_time, 2),
             "summary": {
-                "total": sum(len(v) for v in result.values()),
-                "good": len(result["good"]),
-                "bad": len(result["bad"]),
-                "neutral": len(result["neutral"]),
-                "platform": result.get("good", [{}])[0].get("platform", "unknown") if result["good"] else "unknown"
+                "total": len(result.get("good", [])) + len(result.get("bad", [])) + len(result.get("neutral", [])),
+                "good": len(result.get("good", [])),
+                "bad": len(result.get("bad", [])),
+                "neutral": len(result.get("neutral", [])),
+                "platform": result.get("good", [{}])[0].get("platform", "unknown") if result.get("good") else "unknown"
             },
             "comments": result
         })
@@ -174,26 +179,22 @@ async def process(job_id: str, req: AnalyzeRequest):
         print(f"   Kết quả: {job['summary']['good']} good, {job['summary']['bad']} bad, {job['summary']['neutral']} neutral\n")
         
     except Exception as e:
-        print(f"\n❌ LỖI JOB {job_id}: {e}\n")
+        print(f"\n❌ LỖI JOB {job_id}: {e}")
+        traceback.print_exc()
+        
         job["status"] = "failed"
         job["error"] = str(e)
         job["processing_time"] = time.time() - start
 
-# ============================================
-# ✅ Serve SPA - Catch-all route
-# ============================================
 @app.get("/{full_path:path}")
 def serve_spa(full_path: str):
-    # Bỏ qua API routes
     if full_path.startswith("api/"):
         raise HTTPException(404, "API endpoint not found")
     
-    # Nếu là file tĩnh, serve trực tiếp
     static_file = f"/usr/share/nginx/html/{full_path}"
     if os.path.exists(static_file) and os.path.isfile(static_file):
         return FileResponse(static_file)
     
-    # Mặc định serve index.html cho SPA routing
     index_file = "/usr/share/nginx/html/index.html"
     if os.path.exists(index_file):
         return FileResponse(index_file)
