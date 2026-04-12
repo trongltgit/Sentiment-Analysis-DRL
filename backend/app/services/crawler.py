@@ -60,7 +60,7 @@ class CommentCrawler:
         
         print(f"📊 Total unique comments: {len(final_comments)}")
         
-        # ✅ PHÂN LOẠI SENTIMENT
+        # PHÂN LOẠI SENTIMENT
         classified = self._classify_comments(final_comments, url)
         
         return classified
@@ -126,7 +126,7 @@ class CommentCrawler:
             "bad": bad,
             "neutral": neutral,
             "total": len(good) + len(bad) + len(neutral),
-            "sources": "+".join(["scrapingbee"]) if good or bad or neutral else "none"
+            "sources": "+".join(sources_used) if sources_used else "none"
         }
     
     def _detect_platform(self, url: str) -> str:
@@ -269,8 +269,9 @@ class CommentCrawler:
             return False
         if len(re.sub(r'[^\w\s]', '', text)) < 10:
             return False
-        # Loại bỏ text có quá nhiều số (thường là spam)
-        if len(re.findall(r'\d', text)) > len(text) * 0.3:
+        # ✅ FIX: Đếm số digit đúng cách
+        digit_count = len([c for c in text if c.isdigit()])
+        if digit_count > len(text) * 0.3:
             return False
         return True
     
