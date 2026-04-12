@@ -1,29 +1,29 @@
-FROM node:20-alpine AS frontend-builder
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm install --no-audit --no-fund
-COPY frontend/ ./
-RUN npm run build
+#!/bin/bash
+set -e
 
-FROM python:3.11-slim
-WORKDIR /app
+echo "🚀 Starting AI Sentiment Analysis Service..."
+PORT=${PORT:-10000}
+echo "🔧 PORT: $PORT"
 
-RUN apt-get update && apt-get install -y nginx curl && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /app/logs /tmp /run/nginx
+# ✅ THÊM: Kiểm tra file tồn tại
+echo "📁 Checking frontend build..."
+ls -la /usr/share/nginx/html/ || echo "❌ /usr/share/nginx/html not found"
+if [ -f /usr/share/nginx/html/index.html ]; then
+    echo "✅ index.html exists"
+    head -5 /usr/share/nginx/html/index.html
+else
+    echo "❌ index.html NOT FOUND"
+fi
 
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 1. Cleanup nginx
+rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf 2>/dev/null || true
+sed -i "s/listen 10000/listen $PORT/g" /etc/nginx/conf.d/default.conf 2>/dev/null || true
 
-COPY backend/ ./backend/
-RUN find backend -type d -exec touch {}/__init__.py \; 2>/dev/null || true
+# ✅ THÊM: Hiển thị config để debug
+echo "📝 Nginx config:"
+cat /etc/nginx/conf.d/default.conf
 
-COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
+# 2. Test nginx config
+nginx -t || exit 1
 
-RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf 2>/dev/null || true
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
-
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
-
-EXPOSE 10000
-CMD ["/start.sh"]
+# ... rest giữ nguyên
