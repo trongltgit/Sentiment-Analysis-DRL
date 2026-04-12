@@ -12,13 +12,13 @@ class CommentCrawler:
         self.scraperapi_token = os.getenv("SCRAPERAPI_TOKEN")
     
     async def crawl(self, url: str, max_comments: int = 25) -> Dict:
-        """Thu thập từ nhiều nguồn free"""
+        """Thu thập và phân loại comments thành good/bad/neutral"""
         
         all_comments = []
         sources_used = []
         errors = []
         
-        # Nguồn 1: ScrapingBee (chính xác nhất)
+        # Nguồn 1: ScrapingBee
         if self.scrapingbee_token and len(all_comments) < max_comments:
             try:
                 comments = await self._scrape_scrapingbee(url, max_comments)
@@ -27,7 +27,8 @@ class CommentCrawler:
                     sources_used.append("scrapingbee")
                     print(f"✓ ScrapingBee: {len(comments)} comments")
             except Exception as e:
-                errors.append(f"ScrapingBee: {str(e)[:50]}")
+                errors.append(f"ScrapingBee: {str(e)[:100]}")
+                print(f"❌ ScrapingBee error: {e}")
         
         # Nguồn 2: ScraperAPI
         if self.scraperapi_token and len(all_comments) < max_comments:
@@ -38,9 +39,10 @@ class CommentCrawler:
                     sources_used.append("scraperapi")
                     print(f"✓ ScraperAPI: {len(comments)} comments")
             except Exception as e:
-                errors.append(f"ScraperAPI: {str(e)[:50]}")
+                errors.append(f"ScraperAPI: {str(e)[:100]}")
+                print(f"❌ ScraperAPI error: {e}")
         
-        # Nguồn 3: Facebook Mobile (backup)
+        # Nguồn 3: Facebook Mobile
         if len(all_comments) < max_comments // 2:
             try:
                 comments = await self._scrape_fb_mobile(url, max_comments - len(all_comments))
@@ -49,73 +51,189 @@ class CommentCrawler:
                     sources_used.append("fb_mobile")
                     print(f"✓ FB Mobile: {len(comments)} comments")
             except Exception as e:
-                errors.append(f"FB Mobile: {str(e)[:50]}")
+                errors.append(f"FB Mobile: {str(e)[:100]}")
+                print(f"❌ FB Mobile error: {e}")
         
         # Lọc trùng
-        unique = self._deduplicate(all_comments)
-        final = unique[:max_comments]
+        unique_comments = self._deduplicate(all_comments)
+        final_comments = unique_comments[:max_comments]
+        
+        print(f"📊 Total unique comments: {len(final_comments)}")
+        
+        # ✅ PHÂN LOẠI SENTIMENT
+        classified = self._classify_comments(final_comments, url)
+        
+        return classified
+    
+    def _classify_comments(self, comments: List[str], url: str) -> Dict:
+        """Phân loại comments thành good/bad/neutral dựa trên từ khóa"""
+        
+        good_keywords = [
+            "tốt", "hay", "đẹp", "thích", "tuyệt", "xuất sắc", "tuyệt vời",
+            "hài lòng", "ưng ý", "chất lượng", "recommend", "5 sao", "5 star",
+            "good", "great", "excellent", "love", "perfect", "amazing",
+            "cảm ơn", "thank", "hữu ích", "đáng tin cậy", "uy tín"
+        ]
+        
+        bad_keywords = [
+            "tệ", "kém", "xấu", "chán", "thất vọng", "khiếu nại", "phàn nàn",
+            "không hài lòng", "bực mình", "tức giận", "lừa đảo", "lừa",
+            "bad", "hate", "terrible", "awful", "worst", "scam", "fraud",
+            "chậm", "lỗi", "bug", "crash", "không được", "tệ hại"
+        ]
+        
+        good = []
+        bad = []
+        neutral = []
+        
+        for text in comments:
+            text_lower = text.lower()
+            good_score = sum(1 for kw in good_keywords if kw in text_lower)
+            bad_score = sum(1 for kw in bad_keywords if kw in text_lower)
+            
+            # Xác định sentiment
+            if good_score > bad_score:
+                sentiment = "good"
+                good.append({
+                    "text": text,
+                    "sentiment": "good",
+                    "platform": self._detect_platform(url),
+                    "created_at": None
+                })
+            elif bad_score > good_score:
+                sentiment = "bad"
+                bad.append({
+                    "text": text,
+                    "sentiment": "bad",
+                    "platform": self._detect_platform(url),
+                    "created_at": None
+                })
+            else:
+                sentiment = "neutral"
+                neutral.append({
+                    "text": text,
+                    "sentiment": "neutral",
+                    "platform": self._detect_platform(url),
+                    "created_at": None
+                })
+            
+            print(f"  [{sentiment.upper()}] {text[:50]}...")
+        
+        print(f"✅ Classified: {len(good)} good, {len(bad)} bad, {len(neutral)} neutral")
         
         return {
-            "comments": [{"text": c, "id": f"c{i}"} for i, c in enumerate(final)],
-            "total": len(final),
-            "sources": sources_used,
-            "errors": errors,
-            "source": "+".join(sources_used) if sources_used else "none"
+            "good": good,
+            "bad": bad,
+            "neutral": neutral,
+            "total": len(good) + len(bad) + len(neutral),
+            "sources": "+".join(["scrapingbee"]) if good or bad or neutral else "none"
         }
     
+    def _detect_platform(self, url: str) -> str:
+        """Detect platform từ URL"""
+        if "facebook.com" in url or "fb.com" in url:
+            return "facebook"
+        elif "youtube.com" in url or "youtu.be" in url:
+            return "youtube"
+        elif "tiktok.com" in url:
+            return "tiktok"
+        elif "shopee.vn" in url:
+            return "shopee"
+        elif "lazada.vn" in url:
+            return "lazada"
+        elif "tiki.vn" in url:
+            return "tiki"
+        else:
+            return "web"
+    
     async def _scrape_scrapingbee(self, url: str, max: int) -> List[str]:
+        """Scrape using ScrapingBee API"""
+        if not self.scrapingbee_token:
+            return []
+        
         api_url = "https://app.scrapingbee.com/api/v1"
         
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(
-                api_url,
-                params={
-                    "api_key": self.scrapingbee_token,
-                    "url": url,
-                    "render_js": "true",
-                    "wait": "10000",
-                    "premium_proxy": "true",
-                    "country_code": "us",
-                }
-            )
-            
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            
-            comments = []
-            selectors = [
-                'div[role="article"] span[dir="auto"]',
-                'div[data-ad-preview="message"] span',
-                'div[aria-label*="bình luận"] span',
-                'div[aria-label*="comment"] span',
-            ]
-            
-            for selector in selectors:
-                for el in soup.select(selector):
-                    text = el.get_text(strip=True)
-                    if 15 < len(text) < 500 and self._is_valid(text):
-                        comments.append(text)
-            
-            return self._deduplicate(comments)[:max]
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(
+                    api_url,
+                    params={
+                        "api_key": self.scrapingbee_token,
+                        "url": url,
+                        "render_js": "true",
+                        "wait": "10000",
+                        "premium_proxy": "true",
+                        "country_code": "us",
+                    }
+                )
+                
+                if resp.status_code != 200:
+                    print(f"⚠️ ScrapingBee status: {resp.status_code}")
+                    return []
+                
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                
+                comments = []
+                selectors = [
+                    'div[role="article"] span[dir="auto"]',
+                    'div[data-ad-preview="message"] span',
+                    'div[aria-label*="bình luận"] span',
+                    'div[aria-label*="comment"] span',
+                    'div[data-testid="post_message"] span',
+                ]
+                
+                for selector in selectors:
+                    for el in soup.select(selector):
+                        text = el.get_text(strip=True)
+                        if 15 < len(text) < 500 and self._is_valid(text):
+                            comments.append(text)
+                
+                return self._deduplicate(comments)[:max]
+                
+        except Exception as e:
+            print(f"❌ ScrapingBee exception: {e}")
+            return []
     
     async def _scrape_scraperapi(self, url: str, max: int) -> List[str]:
-        api_url = f"http://api.scraperapi.com?api_key={self.scraperapi_token}&url={url}&render=true&wait=10000"
+        """Scrape using ScraperAPI"""
+        if not self.scraperapi_token:
+            return []
         
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(api_url)
-            
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            
-            comments = []
-            for span in soup.find_all('span', dir='auto'):
-                text = span.get_text(strip=True)
-                if 15 < len(text) < 500 and self._is_valid(text):
-                    comments.append(text)
-            
-            return self._deduplicate(comments)[:max]
+        api_url = f"http://api.scraperapi.com"
+        
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.get(
+                    api_url,
+                    params={
+                        "api_key": self.scraperapi_token,
+                        "url": url,
+                        "render": "true",
+                        "wait": "10000"
+                    }
+                )
+                
+                if resp.status_code != 200:
+                    return []
+                
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                
+                comments = []
+                for span in soup.find_all('span', dir='auto'):
+                    text = span.get_text(strip=True)
+                    if 15 < len(text) < 500 and self._is_valid(text):
+                        comments.append(text)
+                
+                return self._deduplicate(comments)[:max]
+                
+        except Exception as e:
+            print(f"❌ ScraperAPI exception: {e}")
+            return []
     
     async def _scrape_fb_mobile(self, url: str, max: int) -> List[str]:
+        """Scrape Facebook Mobile version"""
         mobile_url = url.replace("www.facebook.com", "m.facebook.com")
         
         headers = {
@@ -123,28 +241,41 @@ class CommentCrawler:
             'Accept-Language': 'vi-VN,vi;q=0.9',
         }
         
-        async with httpx.AsyncClient(timeout=30, headers=headers) as client:
-            resp = await client.get(mobile_url)
-            
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            
-            comments = []
-            for div in soup.find_all(['div', 'span']):
-                text = div.get_text(strip=True)
-                if 20 < len(text) < 400 and self._is_valid(text):
-                    comments.append(text)
-            
-            return self._deduplicate(comments)[:max]
+        try:
+            async with httpx.AsyncClient(timeout=30, headers=headers) as client:
+                resp = await client.get(mobile_url)
+                
+                if resp.status_code != 200:
+                    return []
+                
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                
+                comments = []
+                for div in soup.find_all(['div', 'span']):
+                    text = div.get_text(strip=True)
+                    if 20 < len(text) < 400 and self._is_valid(text):
+                        comments.append(text)
+                
+                return self._deduplicate(comments)[:max]
+                
+        except Exception as e:
+            print(f"❌ FB Mobile exception: {e}")
+            return []
     
     def _is_valid(self, text: str) -> bool:
+        """Kiểm tra text có hợp lệ không"""
         if re.search(r'http[s]?://', text):
             return False
         if len(re.sub(r'[^\w\s]', '', text)) < 10:
             return False
+        # Loại bỏ text có quá nhiều số (thường là spam)
+        if len(re.findall(r'\d', text)) > len(text) * 0.3:
+            return False
         return True
     
     def _deduplicate(self, comments: List[str]) -> List[str]:
+        """Loại bỏ comments trùng lặp"""
         seen = set()
         unique = []
         for c in comments:
