@@ -3,6 +3,8 @@ FastAPI - Phân tích sentiment: GOOD / BAD / NEUTRAL
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 import uuid
@@ -44,7 +46,12 @@ class AnalysisResponse(BaseModel):
     error: Optional[str] = None
 
 # ============================================
-# ✅ API Root - Không chiếm "/" nữa
+# Mount static files (assets)
+# ============================================
+app.mount("/assets", StaticFiles(directory="/usr/share/nginx/html/assets"), name="assets")
+
+# ============================================
+# API Routes
 # ============================================
 @app.get("/api/")
 def api_root():
@@ -57,8 +64,6 @@ def api_root():
             "neutral": "Bình luận TRUNG LẬP (không rõ ràng, bình thường)"
         }
     }
-
-# ❌ ĐÃ XÓA: @app.get("/") và @app.head("/")
 
 @app.get("/api/v1/health")
 def health():
@@ -173,6 +178,27 @@ async def process(job_id: str, req: AnalyzeRequest):
         job["status"] = "failed"
         job["error"] = str(e)
         job["processing_time"] = time.time() - start
+
+# ============================================
+# ✅ Serve SPA - Catch-all route
+# ============================================
+@app.get("/{full_path:path}")
+def serve_spa(full_path: str):
+    # Bỏ qua API routes
+    if full_path.startswith("api/"):
+        raise HTTPException(404, "API endpoint not found")
+    
+    # Nếu là file tĩnh, serve trực tiếp
+    static_file = f"/usr/share/nginx/html/{full_path}"
+    if os.path.exists(static_file) and os.path.isfile(static_file):
+        return FileResponse(static_file)
+    
+    # Mặc định serve index.html cho SPA routing
+    index_file = "/usr/share/nginx/html/index.html"
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    
+    raise HTTPException(404, "Not found")
 
 if __name__ == "__main__":
     import uvicorn
