@@ -13,8 +13,8 @@ RUN npm run build
 # Kiểm tra build output
 RUN echo "=== Build output ===" && \
     ls -la /app/frontend/dist/ && \
-    echo "=== nginx.conf exists? ===" && \
-    test -f /app/frontend/nginx.conf && echo "YES" || echo "NO"
+    echo "=== index.html exists? ===" && \
+    test -f /app/frontend/dist/index.html && echo "YES" || echo "NO"
 
 # ============================================
 # STAGE 2: Python Backend + Nginx
@@ -22,8 +22,9 @@ RUN echo "=== Build output ===" && \
 FROM python:3.11-slim
 WORKDIR /app
 
+# Cài đặt nginx và dependencies
 RUN apt-get update && \
-    apt-get install -y nginx curl && \
+    apt-get install -y nginx curl gettext-base && \
     rm -rf /var/lib/apt/lists/* && \
     mkdir -p /app/logs /tmp /run/nginx /usr/share/nginx/html /etc/nginx/conf.d
 
@@ -36,24 +37,22 @@ RUN find backend -type d -exec touch {}/__init__.py \; 2>/dev/null || true
 # Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# ✅ Copy nginx.conf vào đúng vị trí
-COPY --from=frontend-builder /app/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+# ✅ Copy nginx.conf template (sẽ được xử lý bởi start.sh)
+COPY --from=frontend-builder /app/frontend/nginx.conf /etc/nginx/conf.d/default.conf.template
 
 # Kiểm tra sau khi copy
 RUN echo "=== Checking /usr/share/nginx/html ===" && \
     ls -la /usr/share/nginx/html/ && \
-    echo "=== Checking nginx.conf ===" && \
-    cat /etc/nginx/conf.d/default.conf | head -30
+    echo "=== Checking nginx.conf.template ===" && \
+    cat /etc/nginx/conf.d/default.conf.template | head -20
 
 # Cleanup default nginx sites
-RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/conf.d/default.conf 2>/dev/null || true && \
-    mkdir -p /etc/nginx/conf.d
-
-# Copy nginx.conf lại (đảm bảo chắc chắn)
-COPY --from=frontend-builder /app/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+RUN rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
+# ✅ Chỉ expose 1 port cho Render Web Service
 EXPOSE 10000
+
 CMD ["/start.sh"]
