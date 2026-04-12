@@ -29,6 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ FIX: Dùng dict thay vì global variable để tránh mất dữ liệu
 jobs: Dict[str, dict] = {}
 
 class AnalyzeRequest(BaseModel):
@@ -84,7 +85,7 @@ async def analyze(req: AnalyzeRequest, bg: BackgroundTasks):
         "created_at": datetime.now().isoformat(),
         "completed_at": None,
         "summary": None,
-        "comments": None,
+        "comments": {"good": [], "bad": [], "neutral": []},  # ✅ FIX: Khởi tạo rỗng
         "processing_time": None,
         "error": None
     }
@@ -95,9 +96,16 @@ async def analyze(req: AnalyzeRequest, bg: BackgroundTasks):
 
 @app.get("/api/v1/analysis/{job_id}")
 def get_job(job_id: str):
+    print(f"🔍 Get job: {job_id}")
+    print(f"   Available jobs: {list(jobs.keys())}")
+    
     if job_id not in jobs:
+        print(f"   ❌ Job not found!")
         raise HTTPException(404, "Không tìm thấy job")
-    return AnalysisResponse(**jobs[job_id])
+    
+    job = jobs[job_id]
+    print(f"   ✅ Job found: {job['status']}")
+    return AnalysisResponse(**job)
 
 @app.get("/api/v1/analysis/{job_id}/{category}")
 def get_category(job_id: str, category: str):
@@ -152,27 +160,26 @@ async def process(job_id: str, req: AnalyzeRequest):
         print(f"🔍 Đang phân tích: {req.url}")
         result = await crawler.crawl(req.url, req.max_comments)
         
-        # ✅ Log kết quả
-        print(f"📊 Crawl result keys: {result.keys()}")
+        # ✅ FIX: Log kết quả chi tiết
+        print(f"📊 Crawl result:")
         print(f"   Good: {len(result.get('good', []))}")
         print(f"   Bad: {len(result.get('bad', []))}")
         print(f"   Neutral: {len(result.get('neutral', []))}")
         
         proc_time = time.time() - start
         
-        job.update({
-            "status": "completed",
-            "completed_at": datetime.now().isoformat(),
-            "processing_time": round(proc_time, 2),
-            "summary": {
-                "total": len(result.get("good", [])) + len(result.get("bad", [])) + len(result.get("neutral", [])),
-                "good": len(result.get("good", [])),
-                "bad": len(result.get("bad", [])),
-                "neutral": len(result.get("neutral", [])),
-                "platform": result.get("good", [{}])[0].get("platform", "unknown") if result.get("good") else "unknown"
-            },
-            "comments": result
-        })
+        # ✅ FIX: Cập nhật job đúng cách
+        job["status"] = "completed"
+        job["completed_at"] = datetime.now().isoformat()
+        job["processing_time"] = round(proc_time, 2)
+        job["summary"] = {
+            "total": len(result.get("good", [])) + len(result.get("bad", [])) + len(result.get("neutral", [])),
+            "good": len(result.get("good", [])),
+            "bad": len(result.get("bad", [])),
+            "neutral": len(result.get("neutral", [])),
+            "platform": result.get("good", [{}])[0].get("platform", "unknown") if result.get("good") else "unknown"
+        }
+        job["comments"] = result
         
         print(f"\n✅ HOÀN THÀNH JOB {job_id}")
         print(f"   Thời gian: {proc_time:.2f}s")
@@ -182,9 +189,11 @@ async def process(job_id: str, req: AnalyzeRequest):
         print(f"\n❌ LỖI JOB {job_id}: {e}")
         traceback.print_exc()
         
+        # ✅ FIX: Giữ job và đánh dấu failed, không xóa
         job["status"] = "failed"
         job["error"] = str(e)
         job["processing_time"] = time.time() - start
+        job["comments"] = {"good": [], "bad": [], "neutral": []}  # Trả về rỗng thay vì None
 
 @app.get("/{full_path:path}")
 def serve_spa(full_path: str):
