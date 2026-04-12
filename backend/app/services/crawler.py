@@ -60,7 +60,7 @@ class CommentCrawler:
         
         print(f"📊 Total unique comments: {len(final_comments)}")
         
-        # ✅ FIX: Truyền sources_used vào _classify_comments
+        # PHÂN LOẠI SENTIMENT
         classified = self._classify_comments(final_comments, url, sources_used)
         
         return classified
@@ -121,12 +121,11 @@ class CommentCrawler:
         
         print(f"✅ Classified: {len(good)} good, {len(bad)} bad, {len(neutral)} neutral")
         
+        # ✅ FIX: Chỉ trả về 3 keys good/bad/neutral, không có total/sources
         return {
             "good": good,
             "bad": bad,
-            "neutral": neutral,
-            "total": len(good) + len(bad) + len(neutral),
-            "sources": "+".join(sources_used) if sources_used else "none"
+            "neutral": neutral
         }
     
     def _detect_platform(self, url: str) -> str:
