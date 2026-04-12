@@ -15,46 +15,61 @@ if [ -d "/usr/share/nginx/html" ]; then
         echo "✅ index.html EXISTS ($(wc -c < /usr/share/nginx/html/index.html) bytes)"
     else
         echo "❌ index.html NOT FOUND"
+        exit 1
     fi
 else
     echo "❌ Directory /usr/share/nginx/html does NOT exist"
+    exit 1
 fi
 
 # ============================================
-# ✅ SỬA: Dùng nginx.conf đã có trong image
+# Setup nginx
 # ============================================
 echo "🧹 Cleaning nginx default configs..."
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
-# ✅ KIỂM TRA: nginx.conf đã được copy trong Dockerfile chưa
-if [ -f "/etc/nginx/conf.d/default.conf" ]; then
-    echo "✅ Found /etc/nginx/conf.d/default.conf (copied from Dockerfile)"
-else
+# Kiểm tra nginx.conf đã copy chưa
+if [ ! -f "/etc/nginx/conf.d/default.conf" ]; then
     echo "❌ /etc/nginx/conf.d/default.conf not found!"
-    echo "📂 Contents of /etc/nginx/conf.d/:"
-    ls -la /etc/nginx/conf.d/ 2>/dev/null || echo "Directory empty"
     exit 1
 fi
 
-# ✅ THAY THẾ PORT trong config
+# Thay thế PORT trong config
 echo "🔧 Replacing port ${PORT} in nginx config..."
 sed -i "s/listen 10000/listen ${PORT}/g" /etc/nginx/conf.d/default.conf
+sed -i "s/listen \[::\]:10000/listen [::]:${PORT}/g" /etc/nginx/conf.d/default.conf
 
-# ✅ HIỂN THỊ CONFIG
 echo "📝 Final nginx config:"
 cat /etc/nginx/conf.d/default.conf
 
-# ============================================
-# Test và khởi động nginx
-# ============================================
+# Test nginx config
 echo "🧪 Testing nginx config..."
 nginx -t || exit 1
 
-echo "🌐 Starting nginx..."
-nginx
+# ============================================
+# Start nginx (foreground để debug)
+# ============================================
+echo "🌐 Starting nginx on port ${PORT}..."
+nginx -g "daemon off;" &
+NGINX_PID=$!
+
+# Đợi nginx khởi động
+sleep 2
+
+# Test nginx ngay
+echo "🧪 Testing nginx at localhost:${PORT}..."
+NGINX_TEST=$(curl -s --max-time 3 http://localhost:${PORT}/ 2>&1 || echo "FAILED")
+if echo "$NGINX_TEST" | grep -q "<!DOCTYPE html>\|<html"; then
+    echo "✅ Nginx is serving HTML correctly!"
+elif echo "$NGINX_TEST" | grep -q "service.*Sentiment\|Sentiment Analysis API"; then
+    echo "❌ WARNING: Nginx is serving JSON from backend!"
+    echo "Response: $NGINX_TEST"
+else
+    echo "⚠️ Nginx test result: $NGINX_TEST"
+fi
 
 # ============================================
-# Khởi động backend
+# Start backend
 # ============================================
 echo "📡 Starting Backend on port 8000..."
 cd /app
@@ -77,12 +92,11 @@ except Exception as e:
     sys.exit(1)
 " || exit 1
 
-# Giới hạn thread
+# Giới hạn thread để tiết kiệm RAM
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
 # Start uvicorn
-echo "🚀 Starting uvicorn..."
 uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info &
 BACKEND_PID=$!
 
@@ -102,32 +116,8 @@ for i in {1..60}; do
     sleep 2
 done
 
-# ============================================
-# ✅ TEST: Kiểm tra nginx đang serve đúng
-# ============================================
-echo "🧪 Testing nginx at port ${PORT}..."
-sleep 2
-TEST_RESPONSE=$(curl -s --max-time 5 http://localhost:${PORT}/ 2>/dev/null || echo "CONNECTION_FAILED")
-
-if echo "$TEST_RESPONSE" | grep -q "<!DOCTYPE html>\|<html"; then
-    echo "✅ SUCCESS: Nginx is serving HTML!"
-    echo "📄 Response preview:"
-    echo "$TEST_RESPONSE" | head -5
-elif echo "$TEST_RESPONSE" | grep -q "service.*Sentiment\|Sentiment Analysis API"; then
-    echo "❌ WARNING: Nginx is serving JSON from backend instead of HTML!"
-    echo "🔍 Response:"
-    echo "$TEST_RESPONSE" | head -10
-else
-    echo "⚠️ Response from port ${PORT}:"
-    echo "$TEST_RESPONSE" | head -10
-fi
-
-# Reload nginx
-echo "🔄 Reloading nginx..."
-nginx -s reload 2>/dev/null || true
-
 echo "✅ Service ready at port $PORT"
 echo "🌐 URL: http://localhost:$PORT"
 
-# Keep alive
-wait $BACKEND_PID
+# Giữ cả 2 process sống
+wait $NGINX_PID
