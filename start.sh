@@ -2,15 +2,17 @@
 set -e
 
 echo "🚀 Starting AI Sentiment Analysis Service..."
+
+# ✅ Lấy PORT từ environment (Render sẽ set)
 PORT=${PORT:-10000}
-echo "🔧 PORT: $PORT"
+echo "🔧 PORT from env: $PORT"
 
 # ============================================
 # Kiểm tra frontend build
 # ============================================
 echo "📁 Checking /usr/share/nginx/html/ ..."
 if [ -d "/usr/share/nginx/html" ]; then
-    ls -la /usr/share/nginx/html/ || echo "⚠️ Cannot list directory"
+    ls -la /usr/share/nginx/html/
     if [ -f "/usr/share/nginx/html/index.html" ]; then
         echo "✅ index.html EXISTS ($(wc -c < /usr/share/nginx/html/index.html) bytes)"
     else
@@ -23,21 +25,21 @@ else
 fi
 
 # ============================================
-# Setup nginx
+# ✅ Setup nginx với PORT động
 # ============================================
 echo "🧹 Cleaning nginx default configs..."
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
-# Kiểm tra nginx.conf đã copy chưa
-if [ ! -f "/etc/nginx/conf.d/default.conf" ]; then
-    echo "❌ /etc/nginx/conf.d/default.conf not found!"
+# Kiểm tra template
+if [ ! -f "/etc/nginx/conf.d/default.conf.template" ]; then
+    echo "❌ Nginx template not found!"
     exit 1
 fi
 
-# Thay thế PORT trong config
-echo "🔧 Replacing port ${PORT} in nginx config..."
-sed -i "s/listen 10000/listen ${PORT}/g" /etc/nginx/conf.d/default.conf
-sed -i "s/listen \[::\]:10000/listen [::]:${PORT}/g" /etc/nginx/conf.d/default.conf
+# ✅ Thay thế ${PORT} trong template bằng giá trị thực
+echo "🔧 Generating nginx config with PORT=${PORT}..."
+export PORT
+envsubst '$PORT' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
 
 echo "📝 Final nginx config:"
 cat /etc/nginx/conf.d/default.conf
@@ -47,7 +49,7 @@ echo "🧪 Testing nginx config..."
 nginx -t || exit 1
 
 # ============================================
-# Start nginx (foreground để debug)
+# Start nginx
 # ============================================
 echo "🌐 Starting nginx on port ${PORT}..."
 nginx -g "daemon off;" &
@@ -63,15 +65,14 @@ if echo "$NGINX_TEST" | grep -q "<!DOCTYPE html>\|<html"; then
     echo "✅ Nginx is serving HTML correctly!"
 elif echo "$NGINX_TEST" | grep -q "service.*Sentiment\|Sentiment Analysis API"; then
     echo "❌ WARNING: Nginx is serving JSON from backend!"
-    echo "Response: $NGINX_TEST"
 else
     echo "⚠️ Nginx test result: $NGINX_TEST"
 fi
 
 # ============================================
-# Start backend
+# Start backend (chỉ trên localhost)
 # ============================================
-echo "📡 Starting Backend on port 8000..."
+echo "📡 Starting Backend on port 8000 (localhost only)..."
 cd /app
 export PYTHONUNBUFFERED=1
 
@@ -84,7 +85,6 @@ try:
     from backend.main import app
     from backend.app.config import settings
     print('✅ FastAPI app import OK')
-    print(f'✅ Config loaded: {settings.APP_NAME if hasattr(settings, \"APP_NAME\") else \"OK\"}')
 except Exception as e:
     print(f'❌ Import error: {e}')
     import traceback
@@ -92,12 +92,12 @@ except Exception as e:
     sys.exit(1)
 " || exit 1
 
-# Giới hạn thread để tiết kiệm RAM
+# Giới hạn thread
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
-# Start uvicorn
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info &
+# ✅ Backend chỉ listen trên localhost (không expose ra ngoài)
+uvicorn backend.main:app --host 127.0.0.1 --port 8000 --workers 1 --log-level info &
 BACKEND_PID=$!
 
 # ============================================
