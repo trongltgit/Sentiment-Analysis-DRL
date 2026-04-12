@@ -44,7 +44,7 @@ class AnalysisResponse(BaseModel):
     error: Optional[str] = None
 
 # ============================================
-# ✅ ĐÃ SỬA: Chuyển API info từ "/" sang "/api/"
+# ✅ ĐÃ SỬA: Chuyển từ "/" sang "/api/"
 # ============================================
 @app.get("/api/")
 def api_root():
@@ -58,7 +58,7 @@ def api_root():
         }
     }
 
-# ❌ ĐÃ XÓA: @app.get("/") và @app.head("/") - không còn chiếm root path
+# ❌ ĐÃ XÓA: @app.get("/") và @app.head("/")
 
 @app.get("/api/v1/health")
 def health():
