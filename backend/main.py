@@ -43,8 +43,11 @@ class AnalysisResponse(BaseModel):
     processing_time: Optional[float] = None
     error: Optional[str] = None
 
-@app.get("/")
-def root():
+# ============================================
+# ✅ ĐÃ SỬA: Chuyển API info từ "/" sang "/api/"
+# ============================================
+@app.get("/api/")
+def api_root():
     return {
         "service": "Sentiment Analysis API",
         "version": "3.0.0",
@@ -55,9 +58,7 @@ def root():
         }
     }
 
-@app.head("/")
-def head_root():
-    return None
+# ❌ ĐÃ XÓA: @app.get("/") và @app.head("/") - không còn chiếm root path
 
 @app.get("/api/v1/health")
 def health():
