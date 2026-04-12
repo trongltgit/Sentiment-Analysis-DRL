@@ -6,64 +6,55 @@ PORT=${PORT:-10000}
 echo "🔧 PORT: $PORT"
 
 # ============================================
-# ✅ THÊM: Kiểm tra thư mục frontend TRƯỚC
+# Kiểm tra frontend build
 # ============================================
 echo "📁 Checking /usr/share/nginx/html/ ..."
 if [ -d "/usr/share/nginx/html" ]; then
     ls -la /usr/share/nginx/html/ || echo "⚠️ Cannot list directory"
     if [ -f "/usr/share/nginx/html/index.html" ]; then
-        echo "✅ index.html EXISTS"
-        echo "📄 First 10 lines of index.html:"
-        head -10 /usr/share/nginx/html/index.html
+        echo "✅ index.html EXISTS ($(wc -c < /usr/share/nginx/html/index.html) bytes)"
     else
-        echo "❌ index.html NOT FOUND in /usr/share/nginx/html/"
-        echo "📂 Contents of /usr/share/nginx/html/:"
-        find /usr/share/nginx/html/ -type f -name "*" 2>/dev/null | head -20 || echo "Directory empty or not accessible"
+        echo "❌ index.html NOT FOUND"
     fi
 else
     echo "❌ Directory /usr/share/nginx/html does NOT exist"
 fi
 
 # ============================================
-# 1. Cleanup nginx default configs
+# ✅ SỬA: Dùng nginx.conf đã có trong image
 # ============================================
 echo "🧹 Cleaning nginx default configs..."
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
-rm -f /etc/nginx/conf.d/default.conf 2>/dev/null || true
 
-# ============================================
-# ✅ THÊM: Copy nginx config nếu chưa có
-# ============================================
-if [ -f "/app/frontend/nginx.conf" ]; then
-    echo "📝 Copying nginx.conf from /app/frontend/nginx.conf..."
-    cp /app/frontend/nginx.conf /etc/nginx/conf.d/default.conf
+# ✅ KIỂM TRA: nginx.conf đã được copy trong Dockerfile chưa
+if [ -f "/etc/nginx/conf.d/default.conf" ]; then
+    echo "✅ Found /etc/nginx/conf.d/default.conf (copied from Dockerfile)"
 else
-    echo "⚠️ /app/frontend/nginx.conf not found, checking /etc/nginx/conf.d/default.conf..."
+    echo "❌ /etc/nginx/conf.d/default.conf not found!"
+    echo "📂 Contents of /etc/nginx/conf.d/:"
+    ls -la /etc/nginx/conf.d/ 2>/dev/null || echo "Directory empty"
+    exit 1
 fi
 
-# ✅ THÊM: Replace port trong nginx config
+# ✅ THAY THẾ PORT trong config
 echo "🔧 Replacing port ${PORT} in nginx config..."
-sed -i "s/listen 10000/listen ${PORT}/g" /etc/nginx/conf.d/default.conf 2>/dev/null || true
-sed -i "s/listen 10000/listen ${PORT}/g" /etc/nginx/sites-enabled/default 2>/dev/null || true
+sed -i "s/listen 10000/listen ${PORT}/g" /etc/nginx/conf.d/default.conf
 
-# ✅ THÊM: Hiển thị nginx config để debug
+# ✅ HIỂN THỊ CONFIG
 echo "📝 Final nginx config:"
 cat /etc/nginx/conf.d/default.conf
 
 # ============================================
-# 2. Test nginx config
+# Test và khởi động nginx
 # ============================================
 echo "🧪 Testing nginx config..."
 nginx -t || exit 1
 
-# ============================================
-# 3. Start nginx
-# ============================================
 echo "🌐 Starting nginx..."
 nginx
 
 # ============================================
-# 4. Start backend
+# Khởi động backend
 # ============================================
 echo "📡 Starting Backend on port 8000..."
 cd /app
@@ -86,7 +77,7 @@ except Exception as e:
     sys.exit(1)
 " || exit 1
 
-# Giới hạn thread để tiết kiệm RAM
+# Giới hạn thread
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
@@ -96,7 +87,7 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --log-level info
 BACKEND_PID=$!
 
 # ============================================
-# 5. Wait for backend
+# Đợi backend sẵn sàng
 # ============================================
 echo "⏳ Waiting for backend..."
 for i in {1..60}; do
@@ -112,26 +103,28 @@ for i in {1..60}; do
 done
 
 # ============================================
-# ✅ THÊM: Test nginx đang serve đúng không
+# ✅ TEST: Kiểm tra nginx đang serve đúng
 # ============================================
-echo "🧪 Testing nginx is serving index.html..."
-sleep 1
-if curl -s --max-time 5 http://localhost:${PORT}/ | grep -q "<!DOCTYPE html>\|<html"; then
-    echo "✅ Nginx is serving HTML correctly!"
-elif curl -s --max-time 5 http://localhost:${PORT}/ | grep -q "service.*Sentiment"; then
+echo "🧪 Testing nginx at port ${PORT}..."
+sleep 2
+TEST_RESPONSE=$(curl -s --max-time 5 http://localhost:${PORT}/ 2>/dev/null || echo "CONNECTION_FAILED")
+
+if echo "$TEST_RESPONSE" | grep -q "<!DOCTYPE html>\|<html"; then
+    echo "✅ SUCCESS: Nginx is serving HTML!"
+    echo "📄 Response preview:"
+    echo "$TEST_RESPONSE" | head -5
+elif echo "$TEST_RESPONSE" | grep -q "service.*Sentiment\|Sentiment Analysis API"; then
     echo "❌ WARNING: Nginx is serving JSON from backend instead of HTML!"
-    echo "🔍 Response from port ${PORT}:"
-    curl -s http://localhost:${PORT}/ | head -5
+    echo "🔍 Response:"
+    echo "$TEST_RESPONSE" | head -10
 else
-    echo "⚠️ Unexpected response from nginx:"
-    curl -s http://localhost:${PORT}/ | head -10
+    echo "⚠️ Response from port ${PORT}:"
+    echo "$TEST_RESPONSE" | head -10
 fi
 
-# ============================================
-# 6. Reload nginx
-# ============================================
+# Reload nginx
 echo "🔄 Reloading nginx..."
-nginx -s reload || true
+nginx -s reload 2>/dev/null || true
 
 echo "✅ Service ready at port $PORT"
 echo "🌐 URL: http://localhost:$PORT"
