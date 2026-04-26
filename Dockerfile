@@ -7,19 +7,21 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-COPY frontend/package*.json ./
+# ✅ ARG này làm invalidate toàn bộ cache khi thay đổi
+ARG CACHEBUST=2
 
-# ✅ --no-cache buộc npm cài lại, tránh Docker dùng layer cũ
+COPY frontend/package*.json ./
 RUN npm install --no-audit --no-fund
 
 COPY frontend/ ./
 
-# ✅ Xóa dist cũ trước khi build để tránh artifact cũ lẫn vào
+# Xóa dist cũ, build mới hoàn toàn
 RUN rm -rf dist && npm run build
 
-RUN echo "=== Build output ===" && \
-    ls -la /app/frontend/dist/ && \
-    echo "=== index.html ===" && \
+# Log để xác nhận build mới
+RUN echo "=== Frontend build xong ===" && \
+    ls -la /app/frontend/dist/assets/ && \
+    echo "=== index.html content ===" && \
     cat /app/frontend/dist/index.html
 
 # ============================================
@@ -40,12 +42,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 RUN find backend -type d -exec touch {}/__init__.py \; 2>/dev/null || true
 
-# Copy frontend build
+# Copy frontend build từ stage 1
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-RUN echo "=== Checking /usr/share/nginx/html ===" && \
+RUN echo "=== /usr/share/nginx/html ===" && \
     ls -la /usr/share/nginx/html/ && \
-    echo "=== JS files ===" && \
+    echo "=== assets ===" && \
     ls -la /usr/share/nginx/html/assets/
 
 COPY start.sh /start.sh
