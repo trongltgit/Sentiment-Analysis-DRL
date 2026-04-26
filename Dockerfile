@@ -1,28 +1,34 @@
+# File: Dockerfile
+
 # ============================================
 # STAGE 1: Build Frontend
 # ============================================
 FROM node:20-alpine AS frontend-builder
+
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
+
+# ✅ --no-cache buộc npm cài lại, tránh Docker dùng layer cũ
 RUN npm install --no-audit --no-fund
 
 COPY frontend/ ./
-RUN npm run build
 
-# Kiểm tra build output
+# ✅ Xóa dist cũ trước khi build để tránh artifact cũ lẫn vào
+RUN rm -rf dist && npm run build
+
 RUN echo "=== Build output ===" && \
     ls -la /app/frontend/dist/ && \
-    echo "=== index.html exists? ===" && \
-    test -f /app/frontend/dist/index.html && echo "YES" || echo "NO"
+    echo "=== index.html ===" && \
+    cat /app/frontend/dist/index.html
 
 # ============================================
-# STAGE 2: Python Backend (không cần Nginx)
+# STAGE 2: Python Backend
 # ============================================
 FROM python:3.11-slim
+
 WORKDIR /app
 
-# Cài đặt dependencies (không cần nginx)
 RUN apt-get update && \
     apt-get install -y curl && \
     rm -rf /var/lib/apt/lists/* && \
@@ -37,14 +43,13 @@ RUN find backend -type d -exec touch {}/__init__.py \; 2>/dev/null || true
 # Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 
-# Kiểm tra sau khi copy
 RUN echo "=== Checking /usr/share/nginx/html ===" && \
-    ls -la /usr/share/nginx/html/
+    ls -la /usr/share/nginx/html/ && \
+    echo "=== JS files ===" && \
+    ls -la /usr/share/nginx/html/assets/
 
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-# ✅ Chỉ expose 1 port cho Render Web Service
 EXPOSE 10000
-
 CMD ["/start.sh"]
