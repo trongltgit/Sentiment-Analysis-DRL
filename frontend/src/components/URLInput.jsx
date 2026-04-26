@@ -12,17 +12,12 @@ const URLInput = ({ onAnalysisStart }) => {
 
   const detectPlatform = (u) => {
     const lower = u.toLowerCase();
-    if (lower.includes('vietcombank') || lower.includes('techcombank') ||
-        lower.includes('mbbank')      || lower.includes('bidv') ||
-        lower.includes('acb')         || lower.includes('vietinbank')) {
+    if (['vietcombank','techcombank','mbbank','bidv','acb','vietinbank'].some(b => lower.includes(b)))
       return { name: 'Ngân hàng', icon: <Landmark className="h-4 w-4" />, color: 'bg-emerald-600' };
-    }
-    if (lower.includes('shopee.vn') || lower.includes('lazada.vn') || lower.includes('tiki.vn')) {
+    if (['shopee.vn','lazada.vn','tiki.vn'].some(s => lower.includes(s)))
       return { name: 'E-Commerce', icon: '🛒', color: 'bg-orange-500' };
-    }
-    if (lower.includes('facebook.com')) {
+    if (lower.includes('facebook.com'))
       return { name: 'Facebook', icon: '📘', color: 'bg-blue-600' };
-    }
     return { name: 'Website', icon: '🌐', color: 'bg-gray-600' };
   };
 
@@ -34,19 +29,33 @@ const URLInput = ({ onAnalysisStart }) => {
     setError('');
 
     try {
-      // ✅ Gọi POST /api/v1/analyze — dùng relative URL, nginx proxy tới backend
+      console.log('📤 Gửi request phân tích:', url.trim());
+
       const response = await axios.post('/api/v1/analyze', {
         url:          url.trim(),
         max_comments: 100,
       });
 
       const data = response.data;
-      console.log('✅ Job tạo thành công:', data);
+      console.log('📥 Response từ server:', data);
 
-      // Gọi callback để App.jsx navigate đến /analysis/:id
-      if (onAnalysisStart) {
-        onAnalysisStart(data);
+      const jobId = data?.id;
+      if (!jobId) {
+        throw new Error('Server không trả về job id: ' + JSON.stringify(data));
       }
+
+      console.log('🎯 Job ID nhận được:', jobId);
+
+      // Gọi callback (App.jsx sẽ navigate)
+      if (typeof onAnalysisStart === 'function') {
+        console.log('📞 Gọi onAnalysisStart...');
+        onAnalysisStart(data);
+      } else {
+        // Fallback: navigate bằng window nếu callback không hoạt động
+        console.warn('⚠️ onAnalysisStart không phải function, dùng window.location');
+        window.location.href = `/analysis/${jobId}`;
+      }
+
     } catch (err) {
       console.error('❌ Lỗi submit:', err);
       const msg = err.response?.data?.detail || err.message || 'Không thể phân tích link này.';
@@ -74,13 +83,12 @@ const URLInput = ({ onAnalysisStart }) => {
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Input URL */}
           <div className="relative">
             <input
               type="text"
               value={url}
               onChange={(e) => { setUrl(e.target.value); setError(''); }}
-              placeholder="https://vietcombank.com.vn ..."
+              placeholder="https://www.facebook.com/VietinBank/ ..."
               className="w-full pl-6 pr-36 py-4 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-emerald-500 transition"
             />
             {platform && (
@@ -91,19 +99,16 @@ const URLInput = ({ onAnalysisStart }) => {
             )}
           </div>
 
-          {/* Gợi ý */}
           <p className="text-gray-500 text-xs text-center">
-            💡 Tối ưu cho: Website Ngân hàng, E-commerce, Blog, Dịch vụ tài chính
+            💡 Tối ưu cho: Website Ngân hàng, E-commerce, Facebook Page
           </p>
 
-          {/* Lỗi */}
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-300 text-sm">
               {error}
             </div>
           )}
 
-          {/* Nút submit */}
           <button
             type="submit"
             disabled={loading || !url.trim()}
@@ -117,19 +122,19 @@ const URLInput = ({ onAnalysisStart }) => {
         </form>
       </div>
 
-      {/* Ví dụ nhanh */}
+      {/* Quick examples */}
       <div className="mt-4 flex flex-wrap gap-2 justify-center">
         {[
+          'https://www.facebook.com/VietinBank/',
           'https://www.vietcombank.com.vn',
-          'https://www.techcombank.com.vn',
           'https://shopee.vn',
-        ].map((example) => (
+        ].map((ex) => (
           <button
-            key={example}
-            onClick={() => setUrl(example)}
+            key={ex}
+            onClick={() => setUrl(ex)}
             className="text-xs text-gray-400 hover:text-cyan-400 bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-full transition"
           >
-            {example}
+            {ex}
           </button>
         ))}
       </div>
