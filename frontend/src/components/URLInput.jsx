@@ -1,23 +1,26 @@
+// File: frontend/src/components/URLInput.jsx
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Globe, Loader2, Landmark } from 'lucide-react'; // Thêm icon Landmark
+import { Search, Loader2, Landmark } from 'lucide-react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 
 const URLInput = ({ onAnalysisStart }) => {
-  const [url, setUrl] = useState('');
+  const [url,     setUrl]     = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error,   setError]   = useState('');
 
-  const detectPlatform = (url) => {
-    const u = url.toLowerCase();
-    // Ưu tiên hiển thị badge Ngân hàng
-    if (u.includes('vietcombank') || u.includes('techcombank') || u.includes('mbbank') || u.includes('bidv')) {
+  const detectPlatform = (u) => {
+    const lower = u.toLowerCase();
+    if (lower.includes('vietcombank') || lower.includes('techcombank') ||
+        lower.includes('mbbank')      || lower.includes('bidv') ||
+        lower.includes('acb')         || lower.includes('vietinbank')) {
       return { name: 'Ngân hàng', icon: <Landmark className="h-4 w-4" />, color: 'bg-emerald-600' };
     }
-    if (u.includes('shopee.vn') || u.includes('lazada.vn')) {
+    if (lower.includes('shopee.vn') || lower.includes('lazada.vn') || lower.includes('tiki.vn')) {
       return { name: 'E-Commerce', icon: '🛒', color: 'bg-orange-500' };
     }
-    if (u.includes('facebook.com')) {
+    if (lower.includes('facebook.com')) {
       return { name: 'Facebook', icon: '📘', color: 'bg-blue-600' };
     }
     return { name: 'Website', icon: '🌐', color: 'bg-gray-600' };
@@ -25,55 +28,110 @@ const URLInput = ({ onAnalysisStart }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!url) return;
+    if (!url.trim()) return;
+
     setLoading(true);
+    setError('');
+
     try {
-      const response = await axios.post('/api/v1/analyze', { url, max_comments: 100 });
-      onAnalysisStart(response.data);
+      // ✅ Gọi POST /api/v1/analyze — dùng relative URL, nginx proxy tới backend
+      const response = await axios.post('/api/v1/analyze', {
+        url:          url.trim(),
+        max_comments: 100,
+      });
+
+      const data = response.data;
+      console.log('✅ Job tạo thành công:', data);
+
+      // Gọi callback để App.jsx navigate đến /analysis/:id
+      if (onAnalysisStart) {
+        onAnalysisStart(data);
+      }
     } catch (err) {
-      setError('❌ Không thể phân tích link này. Thử lại sau nhé!');
+      console.error('❌ Lỗi submit:', err);
+      const msg = err.response?.data?.detail || err.message || 'Không thể phân tích link này.';
+      setError(msg);
+      toast.error(msg, { duration: 4000 });
     } finally {
       setLoading(false);
     }
   };
 
-  const platform = url ? detectPlatform(url) : null;
+  const platform = url.trim() ? detectPlatform(url) : null;
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full max-w-2xl mx-auto">
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full max-w-2xl mx-auto mt-10"
+    >
       <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 border border-white/20">
-        <h2 className="text-2xl font-bold text-white mb-6 text-center">
-          🏛️ Phân tích Cảm xúc Ngân hàng & Công ty
+        <h2 className="text-2xl font-bold text-white mb-2 text-center">
+          🏛️ Phân tích Cảm xúc Ngân hàng &amp; Công ty
         </h2>
-        
+        <p className="text-gray-400 text-sm text-center mb-6">
+          Dán link website để AI phân tích tích cực / tiêu cực / trung lập
+        </p>
+
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Input URL */}
           <div className="relative">
             <input
               type="text"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="Dán link Vietcombank, Techcombank, Shopee..."
-              className="w-full pl-6 pr-32 py-4 bg-black/20 border border-white/10 rounded-xl text-white outline-none focus:ring-2 focus:ring-emerald-500"
+              onChange={(e) => { setUrl(e.target.value); setError(''); }}
+              placeholder="https://vietcombank.com.vn ..."
+              className="w-full pl-6 pr-36 py-4 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-emerald-500 transition"
             />
             {platform && (
-              <div className={`absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1 rounded-full ${platform.color} text-white text-xs flex items-center gap-2`}>
-                {platform.icon} {platform.name}
+              <div className={`absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1 rounded-full ${platform.color} text-white text-xs flex items-center gap-1.5`}>
+                {platform.icon}
+                <span>{platform.name}</span>
               </div>
             )}
           </div>
 
-          <div className="text-gray-400 text-xs text-center">
-            💡 Hệ thống tối ưu cho: Website Ngân hàng, Dịch vụ tài chính và các shop online.
-          </div>
+          {/* Gợi ý */}
+          <p className="text-gray-500 text-xs text-center">
+            💡 Tối ưu cho: Website Ngân hàng, E-commerce, Blog, Dịch vụ tài chính
+          </p>
 
+          {/* Lỗi */}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-300 text-sm">
+              {error}
+            </div>
+          )}
+
+          {/* Nút submit */}
           <button
-            disabled={loading || !url}
-            className="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 transition-all flex justify-center items-center gap-2"
+            type="submit"
+            disabled={loading || !url.trim()}
+            className="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-2"
           >
-            {loading ? <Loader2 className="animate-spin" /> : <Search size={20} />}
-            Bắt đầu phân tích AI
+            {loading
+              ? <><Loader2 className="animate-spin" size={20} /> Đang phân tích...</>
+              : <><Search size={20} /> Bắt đầu phân tích AI</>
+            }
           </button>
         </form>
+      </div>
+
+      {/* Ví dụ nhanh */}
+      <div className="mt-4 flex flex-wrap gap-2 justify-center">
+        {[
+          'https://www.vietcombank.com.vn',
+          'https://www.techcombank.com.vn',
+          'https://shopee.vn',
+        ].map((example) => (
+          <button
+            key={example}
+            onClick={() => setUrl(example)}
+            className="text-xs text-gray-400 hover:text-cyan-400 bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-full transition"
+          >
+            {example}
+          </button>
+        ))}
       </div>
     </motion.div>
   );
