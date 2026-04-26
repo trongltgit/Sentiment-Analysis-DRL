@@ -1,4 +1,5 @@
 // File: frontend/src/App.jsx
+// VERSION: v3-navigate-fix — nếu thấy log này trong Console là file đúng
 import React from 'react';
 import {
   BrowserRouter as Router,
@@ -11,18 +12,19 @@ import URLInput from './components/URLInput';
 import AnalysisDashboard from './components/AnalysisDashboard';
 import './styles.css';
 
-// ✅ Tách riêng component Home để dùng được useNavigate (phải nằm trong <Router>)
+console.log('🚀 App.jsx VERSION: v3-navigate-fix đã load');
+
 function Home() {
   const navigate = useNavigate();
 
   const handleAnalysisStart = (data) => {
-    console.log('📦 Response từ server:', data);
+    console.log('📦 handleAnalysisStart nhận data:', data);
     const jobId = data?.id;
     if (jobId) {
-      console.log('✅ Navigate tới /analysis/' + jobId);
-      navigate(`/analysis/${jobId}`);
+      console.log('✅ Navigate → /analysis/' + jobId);
+      navigate('/analysis/' + jobId);
     } else {
-      console.error('❌ Không có id trong response:', data);
+      console.error('❌ data.id không tồn tại:', data);
     }
   };
 
@@ -46,7 +48,7 @@ function App() {
 
         <main className="max-w-7xl mx-auto px-4 py-8">
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/"             element={<Home />} />
             <Route path="/analysis/:id" element={<AnalysisDashboard />} />
           </Routes>
         </main>
