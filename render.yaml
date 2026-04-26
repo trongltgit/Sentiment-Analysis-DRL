@@ -1,3 +1,4 @@
+# File: render.yaml
 services:
   - type: web
     name: sentiment-analysis-drl
@@ -5,9 +6,11 @@ services:
     plan: standard
     region: singapore
     healthCheckPath: /api/v1/health
+    # ✅ Truyền CACHEBUST từ Render env → Docker ARG → buộc rebuild
+    dockerBuildArgs:
+      - CACHEBUST=10
     envVars:
       - key: PORT
         value: "10000"
       - key: PYTHONUNBUFFERED
         value: "1"
-    dockerfilePath: Dockerfile
