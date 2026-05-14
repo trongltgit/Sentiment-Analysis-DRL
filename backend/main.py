@@ -1,12 +1,12 @@
 """
-File: backend/main.py
-FastAPI — Phân tích sentiment: GOOD / BAD / NEUTRAL
+FastAPI Backend - Professional Sentiment Analysis v4.0
+Ghi chú: Thay thế hoàn toàn file main.py cũ
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 import uuid
 from datetime import datetime
@@ -15,9 +15,9 @@ import os, sys, time, traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 app = FastAPI(
-    title="Sentiment Analysis",
-    description="Phân tích bình luận: Tích cực / Tiêu cực / Trung lập",
-    version="3.1.0",
+    title="Professional Sentiment Analysis API",
+    description="Enterprise-grade sentiment analysis with strategic insights",
+    version="4.0.0",
 )
 
 app.add_middleware(
@@ -27,167 +27,296 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Lưu jobs trong bộ nhớ (đủ dùng trên 1 worker Render)
+# In-memory job storage
 jobs: Dict[str, dict] = {}
 
 
-# ------------------------------------------------------------------
-# Pydantic models
-# ------------------------------------------------------------------
-class AnalyzeRequest(BaseModel):
-    url: str
-    max_comments: int = 100
+# ==================== PYDANTIC MODELS ====================
+
+class CommentData(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    text: str
+    sentiment: str  # positive, negative, neutral
+    confidence: float = Field(ge=0.0, le=1.0)
+    confidence_level: str  # high, medium, low, very_high
+    keywords: List[str] = []
+
+
+class SentimentSummary(BaseModel):
+    total_comments: int
+    positive: int
+    negative: int
+    neutral: int
+    positive_pct: float
+    negative_pct: float
+    neutral_pct: float
+    average_confidence: float
+    confidence_distribution: Dict[str, int]
+
+
+class StrategicInsights(BaseModel):
+    overall_sentiment: str
+    trend: str
+    risks: List[Dict] = []
+    opportunities: List[Dict] = []
+    recommendations: List[Dict] = []
+
+
+class CommentsByCategory(BaseModel):
+    positive: List[CommentData] = []
+    negative: List[CommentData] = []
+    neutral: List[CommentData] = []
 
 
 class AnalysisResponse(BaseModel):
     id: str
     url: str
-    status: str
+    status: str  # pending, processing, completed, failed
     created_at: str
     completed_at: Optional[str] = None
     processing_time: Optional[float] = None
     error: Optional[str] = None
-    summary: Optional[dict] = None          # chứa các field thống nhất
-    comments: Optional[Dict[str, List[dict]]] = None
+    summary: Optional[SentimentSummary] = None
+    comments: Optional[CommentsByCategory] = None
+    insights: Optional[StrategicInsights] = None
 
 
-# ------------------------------------------------------------------
-# Static files (React build)
-# ------------------------------------------------------------------
+class AnalyzeRequest(BaseModel):
+    url: str
+    max_comments: int = 100
+
+
+# ==================== STATIC FILES ====================
+
 _static_dir = "/usr/share/nginx/html"
 if os.path.isdir(_static_dir):
     app.mount("/assets", StaticFiles(directory=f"{_static_dir}/assets"), name="assets")
 
 
-# ------------------------------------------------------------------
-# API Routes
-# ------------------------------------------------------------------
+# ==================== API ROUTES ====================
+
 @app.get("/api/")
 def api_root():
     return {
-        "service": "Sentiment Analysis API",
-        "version": "3.1.0",
+        "service": "Professional Sentiment Analysis API",
+        "version": "4.0.0",
+        "features": [
+            "Advanced deep learning analysis",
+            "Strategic insights & recommendations",
+            "Financial-grade confidence scores",
+            "Tabbed comment organization",
+            "Multi-language support"
+        ]
     }
 
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "healthy", "time": datetime.now().isoformat()}
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "version": "4.0.0"
+    }
 
 
 @app.post("/api/v1/analyze", response_model=AnalysisResponse)
 async def analyze(req: AnalyzeRequest, bg: BackgroundTasks):
-    print(f"\n{'='*60}")
-    print(f"📝 YÊU CẦU MỚI | URL: {req.url}")
-    print(f"{'='*60}\n")
+    """Start sentiment analysis for a URL"""
+    print(f"\n{'='*70}")
+    print(f"📊 NEW ANALYSIS REQUEST | URL: {req.url}")
+    print(f"   Max comments: {req.max_comments}")
+    print(f"{'='*70}\n")
 
     job_id = str(uuid.uuid4())
     job = {
-        "id":              job_id,
-        "url":             req.url,
-        "status":          "pending",
-        "created_at":      datetime.now().isoformat(),
-        "completed_at":    None,
+        "id": job_id,
+        "url": req.url,
+        "status": "pending",
+        "created_at": datetime.now().isoformat(),
+        "completed_at": None,
         "processing_time": None,
-        "error":           None,
-        "summary":         None,
-        "comments":        {"good": [], "bad": [], "neutral": []},
+        "error": None,
+        "summary": None,
+        "comments": {"positive": [], "negative": [], "neutral": []},
+        "insights": None,
     }
     jobs[job_id] = job
-    bg.add_task(process, job_id, req)
+    
+    # Run analysis in background
+    bg.add_task(process_analysis, job_id, req)
 
     return AnalysisResponse(**job)
 
 
 @app.get("/api/v1/analysis/{job_id}", response_model=AnalysisResponse)
-def get_job(job_id: str):
-    print(f"🔍 GET job: {job_id} | jobs hiện có: {len(jobs)}")
+def get_analysis(job_id: str):
+    """Get analysis results by job_id"""
     if job_id not in jobs:
-        raise HTTPException(404, detail="Không tìm thấy phân tích")
+        raise HTTPException(404, detail="Analysis not found")
     return AnalysisResponse(**jobs[job_id])
 
 
-@app.get("/api/v1/analysis/{job_id}/{category}")
-def get_category(job_id: str, category: str):
+@app.get("/api/v1/analysis/{job_id}/comments/{category}")
+def get_category_comments(job_id: str, category: str):
+    """Get comments by category (positive, negative, neutral)"""
     if job_id not in jobs:
-        raise HTTPException(404, "Không tìm thấy job")
-    if category not in ["good", "bad", "neutral"]:
-        raise HTTPException(400, "Category phải là: good, bad, hoặc neutral")
+        raise HTTPException(404, "Job not found")
+    
+    if category not in ["positive", "negative", "neutral"]:
+        raise HTTPException(400, "Category must be: positive, negative, or neutral")
+    
     job = jobs[job_id]
     if job["status"] != "completed":
-        raise HTTPException(400, "Đang xử lý, vui lòng đợi...")
+        raise HTTPException(400, "Analysis still processing...")
+    
+    comments = job.get("comments", {}).get(category, [])
     return {
-        "job_id":   job_id,
+        "job_id": job_id,
         "category": category,
-        "count":    len(job.get("comments", {}).get(category, [])),
-        "comments": job.get("comments", {}).get(category, []),
+        "count": len(comments),
+        "comments": comments,
     }
 
 
-# ------------------------------------------------------------------
-# Background task
-# ------------------------------------------------------------------
-async def process(job_id: str, req: AnalyzeRequest):
-    job   = jobs[job_id]
+@app.get("/api/v1/analysis/{job_id}/insights")
+def get_insights(job_id: str):
+    """Get strategic insights"""
+    if job_id not in jobs:
+        raise HTTPException(404, "Job not found")
+    
+    job = jobs[job_id]
+    if job["status"] != "completed":
+        raise HTTPException(400, "Analysis still processing...")
+    
+    return job.get("insights", {})
+
+
+# ==================== BACKGROUND PROCESSING ====================
+
+async def process_analysis(job_id: str, req: AnalyzeRequest):
+    """Process sentiment analysis in background"""
+    job = jobs[job_id]
     job["status"] = "processing"
-    start = time.time()
+    start_time = time.time()
 
     try:
-        from app.services.crawler import crawler
-
-        print(f"🔍 Đang crawl: {req.url}")
-        result = await crawler.crawl(req.url, req.max_comments)
-
-        good_list    = result.get("good",    [])
-        bad_list     = result.get("bad",     [])
-        neutral_list = result.get("neutral", [])
-        total        = len(good_list) + len(bad_list) + len(neutral_list)
-
-        # Tính phần trăm an toàn (tránh chia 0)
-        def pct(n):
-            return round(n / total * 100, 1) if total > 0 else 0
-
-        proc_time = round(time.time() - start, 2)
-
-        # ✅ summary có đủ field cho cả backend lẫn frontend
-        job["status"]          = "completed"
-        job["completed_at"]    = datetime.now().isoformat()
-        job["processing_time"] = proc_time
-        job["summary"] = {
-            # Số lượng tuyệt đối
-            "total_comments": total,
-            "good":    len(good_list),
-            "bad":     len(bad_list),
-            "neutral": len(neutral_list),
-            # Phần trăm — frontend dùng các field này
-            "positive_pct": pct(len(good_list)),
-            "negative_pct": pct(len(bad_list)),
-            "neutral_pct":  pct(len(neutral_list)),
-            # Alias giữ tương thích cũ
-            "positive": len(good_list),
-            "negative": len(bad_list),
-        }
-        job["comments"] = result
-
-        print(
-            f"✅ XONG job {job_id} | {proc_time}s | "
-            f"good={len(good_list)} bad={len(bad_list)} neutral={len(neutral_list)}"
+        from app.services.sentiment_analyzer import (
+            ProfessionalSentimentAnalyzer,
+            StrategicInsightGenerator
         )
 
+        print(f"🔄 Processing: {job_id}")
+        print(f"📥 Fetching comments from: {req.url}")
+
+        # Initialize analyzer
+        analyzer = ProfessionalSentimentAnalyzer()
+
+        # Step 1: Crawl comments
+        from app.services.crawler import crawler
+        
+        raw_result = await crawler.crawl(req.url, req.max_comments)
+        
+        # Thích ứng với format cũ: good/bad/neutral → positive/negative/neutral
+        good_list = raw_result.get("good", [])
+        bad_list = raw_result.get("bad", [])
+        neutral_list = raw_result.get("neutral", [])
+        
+        all_comments_text = good_list + bad_list + neutral_list
+
+        if not all_comments_text:
+            raise ValueError("No comments found")
+
+        # Step 2: Analyze sentiment
+        print(f"🔍 Analyzing {len(all_comments_text)} comments...")
+        
+        analyzed_results = []
+        for idx, text in enumerate(all_comments_text):
+            result = analyzer.analyze_professional(text)
+            analyzed_results.append(result)
+            
+            if (idx + 1) % 50 == 0:
+                print(f"   ✓ Analyzed {idx + 1}/{len(all_comments_text)}")
+
+        # Step 3: Organize by category
+        positive_comments = []
+        negative_comments = []
+        neutral_comments = []
+
+        for result in analyzed_results:
+            comment_data = {
+                "id": str(uuid.uuid4())[:8],
+                "text": result.text,
+                "sentiment": result.sentiment,
+                "confidence": round(result.confidence, 3),
+                "confidence_level": result.confidence_level,
+                "keywords": result.keywords,
+            }
+
+            if result.sentiment == "positive":
+                positive_comments.append(comment_data)
+            elif result.sentiment == "negative":
+                negative_comments.append(comment_data)
+            else:
+                neutral_comments.append(comment_data)
+
+        # Step 4: Generate insights
+        print("💡 Generating strategic insights...")
+        insights = StrategicInsightGenerator.generate_insights(
+            analyzed_results,
+            len(all_comments_text)
+        )
+
+        # Step 5: Calculate summary
+        total = len(analyzed_results)
+        
+        summary = {
+            "total_comments": total,
+            "positive": len(positive_comments),
+            "negative": len(negative_comments),
+            "neutral": len(neutral_comments),
+            "positive_pct": round(len(positive_comments) / total * 100, 1) if total > 0 else 0,
+            "negative_pct": round(len(negative_comments) / total * 100, 1) if total > 0 else 0,
+            "neutral_pct": round(len(neutral_comments) / total * 100, 1) if total > 0 else 0,
+            "average_confidence": insights.get("average_confidence", 0),
+            "confidence_distribution": insights.get("confidence_distribution", {}),
+        }
+
+        # Step 6: Update job
+        proc_time = round(time.time() - start_time, 2)
+
+        job["status"] = "completed"
+        job["completed_at"] = datetime.now().isoformat()
+        job["processing_time"] = proc_time
+        job["summary"] = summary
+        job["comments"] = {
+            "positive": positive_comments,
+            "negative": negative_comments,
+            "neutral": neutral_comments,
+        }
+        job["insights"] = insights
+
+        print(f"\n✅ COMPLETED: {job_id}")
+        print(f"   ⏱️  Time: {proc_time}s")
+        print(f"   📊 Positive: {len(positive_comments)} | Negative: {len(negative_comments)} | Neutral: {len(neutral_comments)}")
+        print(f"   🎯 Overall: {insights.get('overall_sentiment')}")
+        print(f"   📈 Confidence: {summary['average_confidence']:.1%}\n")
+
     except Exception as e:
-        print(f"❌ LỖI job {job_id}: {e}")
+        print(f"\n❌ ERROR: {job_id}")
+        print(f"   {str(e)}\n")
         traceback.print_exc()
-        job["status"]          = "failed"
-        job["error"]           = str(e)
-        job["processing_time"] = round(time.time() - start, 2)
-        job["comments"]        = {"good": [], "bad": [], "neutral": []}
+        
+        job["status"] = "failed"
+        job["error"] = str(e)
+        job["processing_time"] = round(time.time() - start_time, 2)
+        job["comments"] = {"positive": [], "negative": [], "neutral": []}
 
 
-# ------------------------------------------------------------------
-# SPA fallback — phục vụ React cho mọi route không phải /api/
-# ------------------------------------------------------------------
+# ==================== SPA FALLBACK ====================
+
 @app.get("/{full_path:path}")
 def serve_spa(full_path: str):
+    """Serve React SPA for all non-API routes"""
     if full_path.startswith("api/"):
         raise HTTPException(404, "API endpoint not found")
 
@@ -204,4 +333,6 @@ def serve_spa(full_path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    port = int(os.getenv("PORT", 8000))
+    print(f"\n🚀 Starting Professional Sentiment Analysis API on port {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
