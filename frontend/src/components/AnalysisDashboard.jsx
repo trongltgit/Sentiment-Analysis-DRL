@@ -1,518 +1,419 @@
-// File: frontend/src/components/AnalysisDashboard.jsx
-// Professional Dashboard v4.0 - Thay thế hoàn toàn file cũ
-
-import React, { useEffect, useState } from 'react';
+// AnalysisDashboard.jsx v2.0 — Groq-powered Financial Sentiment Dashboard
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertCircle, CheckCircle, Clock, BrainCircuit, RefreshCw,
-  TrendingUp, TrendingDown, Zap, Shield, Target, Users,
-  Filter, Download, Share2, Lightbulb, BarChart3
+  TrendingUp, TrendingDown, Zap, Shield, Target, ArrowLeft,
+  BarChart3, Lightbulb, ChevronDown, ChevronUp, ExternalLink,
 } from 'lucide-react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const AnalysisDashboard = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const [analysis, setAnalysis] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [polling, setPolling] = useState(true);
-  const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [selectedCategory, setSelectedCategory] = useState('positive');
-  const [searchFilter, setSearchFilter] = useState('');
+const API = '/api/v1';
+const COLORS = { positive: '#10b981', negative: '#ef4444', neutral: '#6b7280' };
 
-  const apiBase = '/api/v1';
+// ─── Helpers ─────────────────────────────────────────────────
 
-  // Fetch analysis data
-  useEffect(() => {
-    let interval;
-    let retryCount = 0;
-    const maxRetries = 5;
-
-    const fetchAnalysis = async () => {
-      try {
-        const response = await axios.get(`${apiBase}/analysis/${id}`, { timeout: 15000 });
-        setAnalysis(response.data);
-        setError(null);
-        retryCount = 0;
-
-        if (response.data.status === 'completed' || response.data.status === 'failed') {
-          setPolling(false);
-          clearInterval(interval);
-        }
-      } catch (err) {
-        retryCount++;
-        let errorMsg = 'Unable to load analysis';
-        if (err.response?.status === 404) errorMsg = `Analysis not found: ${id}`;
-        else if (err.code === 'ECONNABORTED') errorMsg = 'Connection timeout, retrying...';
-
-        if (retryCount >= maxRetries) {
-          setError(errorMsg);
-          setPolling(false);
-          clearInterval(interval);
-          toast.error(errorMsg);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAnalysis();
-    interval = setInterval(() => {
-      if (polling) fetchAnalysis();
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [id]);
-
-  // ===== HELPER FUNCTIONS =====
-
-  const getStatusColor = (status) => {
-    const colors = {
-      pending: 'text-yellow-400',
-      processing: 'text-blue-400',
-      completed: 'text-green-400',
-      failed: 'text-red-400',
-    };
-    return colors[status] || 'text-gray-400';
-  };
-
-  const getStatusIcon = (status) => {
-    const icons = {
-      pending: <Clock className="animate-pulse" size={20} />,
-      processing: <BrainCircuit className="animate-spin" size={20} />,
-      completed: <CheckCircle size={20} />,
-      failed: <AlertCircle size={20} />,
-    };
-    return icons[status];
-  };
-
-  const getSentimentColor = (sentiment) => {
-    const colors = {
-      positive: 'bg-green-500/20 border-green-500/30',
-      negative: 'bg-red-500/20 border-red-500/30',
-      neutral: 'bg-gray-500/20 border-gray-500/30',
-    };
-    return colors[sentiment] || 'bg-gray-500/20 border-gray-500/30';
-  };
-
-  const getConfidenceColor = (confidence) => {
-    if (confidence >= 0.85) return 'text-green-400';
-    if (confidence >= 0.70) return 'text-yellow-400';
-    return 'text-orange-400';
-  };
-
-  const getCategoryComments = () => {
-    const comments = analysis?.comments || {};
-    const categoryMap = { positive: 'positive', negative: 'negative', neutral: 'neutral' };
-    return comments[categoryMap[selectedCategory]] || [];
-  };
-
-  const filteredComments = getCategoryComments().filter(c =>
-    c.text.toLowerCase().includes(searchFilter.toLowerCase())
-  );
-
-  // ===== LOADING STATE =====
-
-  if (loading && !analysis) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen">
-        <motion.div
-          animate={{ scale: [1, 1.1, 1] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
-          <BrainCircuit className="h-16 w-16 text-cyan-400 mb-4" />
-        </motion.div>
-        <p className="text-lg text-gray-300">Analyzing sentiment...</p>
-        <p className="text-sm text-gray-500 mt-2">This may take a few moments</p>
-      </div>
-    );
-  }
-
-  // ===== ERROR STATE =====
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen">
-        <AlertCircle size={64} className="text-red-500 mb-6" />
-        <h2 className="text-2xl font-bold text-red-400 mb-2">Analysis Failed</h2>
-        <p className="text-gray-400 text-center max-w-md mb-6">{error}</p>
-        <div className="flex gap-4">
-          <button
-            onClick={() => window.location.reload()}
-            className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg font-semibold transition"
-          >
-            Retry
-          </button>
-          <button
-            onClick={() => navigate('/')}
-            className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition"
-          >
-            Back Home
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!analysis) return null;
-
-  const summary = analysis.summary || {};
-  const insights = analysis.insights || {};
-  const comments = analysis.comments || {};
-
-  // ===== TAB DEFINITIONS =====
-
-  const tabs = [
-    { id: 'overview', label: '📊 Overview', icon: BarChart3 },
-    { id: 'insights', label: '💡 Strategic Insights', icon: Lightbulb },
-    { id: 'comments', label: '💬 Comments', icon: Users },
-    { id: 'quality', label: '🎯 Quality Metrics', icon: Zap },
-  ];
-
-  // ===== RENDER =====
+function StatusBadge({ status }) {
+  const cfg = {
+    pending:    { color: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20', icon: <Clock size={14} className="animate-pulse" />,         label: 'Đang chờ' },
+    processing: { color: 'text-blue-400  bg-blue-400/10  border-blue-400/20',  icon: <BrainCircuit size={14} className="animate-spin" />, label: 'Đang phân tích...' },
+    completed:  { color: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20', icon: <CheckCircle size={14} />,                  label: 'Hoàn tất' },
+    failed:     { color: 'text-red-400   bg-red-400/10   border-red-400/20',   icon: <AlertCircle size={14} />,                       label: 'Thất bại' },
+  }[status] || { color: 'text-gray-400', icon: null, label: status };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white pb-10">
-      {/* HEADER */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white/5 backdrop-blur-xl border-b border-white/10 sticky top-0 z-40"
-      >
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold mb-2">Sentiment Analysis Report</h1>
-              <p className="text-gray-400 text-sm truncate">{analysis.url}</p>
-            </div>
-            <div className={`flex items-center gap-3 px-4 py-2 rounded-lg ${getStatusColor(analysis.status)} bg-white/5`}>
-              {getStatusIcon(analysis.status)}
-              <span className="font-semibold capitalize">{analysis.status}</span>
-            </div>
-          </div>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${cfg.color}`}>
+      {cfg.icon}{cfg.label}
+    </span>
+  );
+}
 
-          {analysis.processing_time && (
-            <div className="flex gap-4 text-sm text-gray-400">
-              <span>⏱️ {analysis.processing_time.toFixed(2)}s</span>
-              <span>📊 {summary.total_comments || 0} comments analyzed</span>
-              <span>📈 {summary.average_confidence ? (summary.average_confidence * 100).toFixed(1) : 0}% confidence</span>
-            </div>
-          )}
+function SentimentMeter({ positive_pct, negative_pct, neutral_pct }) {
+  return (
+    <div className="space-y-2">
+      {[
+        { label: '😊 Tích cực', pct: positive_pct, color: 'bg-emerald-500' },
+        { label: '😤 Tiêu cực', pct: negative_pct, color: 'bg-red-500' },
+        { label: '😐 Trung lập', pct: neutral_pct,  color: 'bg-gray-500' },
+      ].map(r => (
+        <div key={r.label}>
+          <div className="flex justify-between text-xs mb-1">
+            <span className="text-gray-300">{r.label}</span>
+            <span className="text-white font-bold">{r.pct?.toFixed(1)}%</span>
+          </div>
+          <div className="bg-white/10 rounded-full h-2 overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${r.pct}%` }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className={`h-2 rounded-full ${r.color}`}
+            />
+          </div>
         </div>
+      ))}
+    </div>
+  );
+}
 
-        {/* TAB NAVIGATION */}
-        {analysis.status === 'completed' && (
-          <div className="bg-black/20 px-6 py-4 flex gap-2 overflow-x-auto">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 rounded-lg whitespace-nowrap font-medium transition-all ${
-                  activeTab === tab.id
-                    ? 'bg-cyan-600 text-white'
-                    : 'bg-white/5 text-gray-300 hover:bg-white/10'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+function CommentCard({ comment, idx }) {
+  const [expanded, setExpanded] = useState(false);
+  const colors = {
+    positive: 'border-emerald-500/30 bg-emerald-500/5',
+    negative: 'border-red-500/30 bg-red-500/5',
+    neutral:  'border-gray-500/30 bg-gray-500/5',
+  };
+  const confColor = comment.confidence >= 0.85 ? 'text-emerald-400'
+    : comment.confidence >= 0.70 ? 'text-blue-400'
+    : comment.confidence >= 0.55 ? 'text-yellow-400' : 'text-gray-400';
+
+  const isLong = comment.text?.length > 160;
+  const text   = isLong && !expanded ? comment.text.slice(0, 160) + '…' : comment.text;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: idx * 0.03 }}
+      className={`rounded-xl border p-3 ${colors[comment.sentiment] || colors.neutral}`}
+    >
+      <p className="text-sm text-gray-200 leading-relaxed">{text}</p>
+
+      {isLong && (
+        <button onClick={() => setExpanded(!expanded)}
+          className="text-xs text-blue-400 mt-1 flex items-center gap-0.5 hover:text-blue-300">
+          {expanded ? <><ChevronUp size={12} />Thu gọn</> : <><ChevronDown size={12} />Xem thêm</>}
+        </button>
+      )}
+
+      <div className="flex flex-wrap gap-1.5 mt-2 items-center">
+        <span className={`text-xs font-semibold ${confColor}`}>
+          {(comment.confidence * 100).toFixed(0)}% tin cậy
+        </span>
+        {comment.source === 'groq' && (
+          <span className="text-xs px-1.5 py-0.5 bg-purple-500/20 text-purple-300 rounded border border-purple-500/20">
+            🤖 Groq
+          </span>
         )}
-      </motion.div>
+        {comment.keywords?.map(kw => (
+          <span key={kw} className="text-xs px-1.5 py-0.5 bg-white/10 text-gray-300 rounded">{kw}</span>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <AnimatePresence mode="wait">
-          {/* TAB: OVERVIEW */}
-          {activeTab === 'overview' && analysis.status === 'completed' && (
-            <motion.div
-              key="overview"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
-            >
-              {/* MAIN SENTIMENT CARDS */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  {
-                    label: 'Positive',
-                    value: summary.positive_pct || 0,
-                    count: summary.positive || 0,
-                    color: 'from-green-500 to-emerald-600',
-                    icon: '👍',
-                  },
-                  {
-                    label: 'Negative',
-                    value: summary.negative_pct || 0,
-                    count: summary.negative || 0,
-                    color: 'from-red-500 to-rose-600',
-                    icon: '👎',
-                  },
-                  {
-                    label: 'Neutral',
-                    value: summary.neutral_pct || 0,
-                    count: summary.neutral || 0,
-                    color: 'from-gray-500 to-slate-600',
-                    icon: '➡️',
-                  },
-                ].map((item, idx) => (
-                  <motion.div
-                    key={idx}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: idx * 0.1 }}
-                    className={`bg-gradient-to-br ${item.color} rounded-2xl p-6 shadow-2xl`}
-                  >
-                    <div className="text-4xl mb-3">{item.icon}</div>
-                    <div className="text-5xl font-bold mb-2">{item.value.toFixed(1)}%</div>
-                    <div className="text-white/80 text-sm">{item.label}</div>
-                    <div className="text-white/60 text-xs mt-2">{item.count} comments</div>
-                  </motion.div>
-                ))}
-              </div>
-
-              {/* KEY METRICS */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3 }}
-                  className="bg-white/5 backdrop-blur border border-white/10 rounded-xl p-5"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <Shield className="text-blue-400" size={20} />
-                    <h3 className="font-semibold">Sentiment Trend</h3>
-                  </div>
-                  <div className="text-2xl font-bold capitalize text-cyan-400">
-                    {insights.overall_sentiment || 'Analyzing...'}
-                  </div>
-                  <p className="text-gray-400 text-xs mt-2">
-                    {insights.trend === 'positive' ? '📈 Trending positive' : '📉 Trending negative'}
-                  </p>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.4 }}
-                  className="bg-white/5 backdrop-blur border border-white/10 rounded-xl p-5"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <Target className="text-purple-400" size={20} />
-                    <h3 className="font-semibold">Analysis Quality</h3>
-                  </div>
-                  <div className="text-2xl font-bold text-purple-400">
-                    {(summary.average_confidence * 100).toFixed(1)}%
-                  </div>
-                  <p className="text-gray-400 text-xs mt-2">Average confidence score</p>
-                </motion.div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* TAB: STRATEGIC INSIGHTS */}
-          {activeTab === 'insights' && analysis.status === 'completed' && (
-            <motion.div
-              key="insights"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-6"
-            >
-              {/* RISKS */}
-              {insights.risks && insights.risks.length > 0 && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6">
-                  <h3 className="text-xl font-bold text-red-400 mb-4 flex items-center gap-2">
-                    <AlertCircle size={20} /> Identified Risks
-                  </h3>
-                  <div className="space-y-3">
-                    {insights.risks.map((risk, idx) => (
-                      <div key={idx} className="bg-black/30 rounded-lg p-4">
-                        <div className="flex justify-between mb-2">
-                          <span className="font-semibold capitalize">{risk.type.replace(/_/g, ' ')}</span>
-                          <span className={`text-xs px-2 py-1 rounded capitalize ${
-                            risk.severity === 'high' ? 'bg-red-600' : 'bg-yellow-600'
-                          }`}>
-                            {risk.severity} severity
-                          </span>
-                        </div>
-                        <p className="text-gray-400 text-sm">{risk.description}</p>
-                        <p className="text-gray-500 text-xs mt-2">Impact: {risk.impact}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+function InsightCard({ icon: Icon, title, items, color }) {
+  if (!items?.length) return null;
+  return (
+    <div className={`rounded-xl border p-4 ${color}`}>
+      <h4 className="font-semibold text-sm mb-3 flex items-center gap-2">
+        <Icon size={15} />{title}
+      </h4>
+      <div className="space-y-2">
+        {items.map((item, i) => (
+          <div key={i} className="bg-black/20 rounded-lg p-3">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm text-gray-200">{item.description || item.action}</p>
+              {(item.severity || item.priority || item.potential) && (
+                <span className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium ${
+                  (item.severity || item.priority || item.potential) === 'high'
+                    ? 'bg-red-500/20 text-red-300'
+                    : (item.severity || item.priority || item.potential) === 'medium'
+                    ? 'bg-yellow-500/20 text-yellow-300'
+                    : 'bg-green-500/20 text-green-300'
+                }`}>
+                  {item.severity || item.priority || item.potential}
+                </span>
               )}
-
-              {/* OPPORTUNITIES */}
-              {insights.opportunities && insights.opportunities.length > 0 && (
-                <div className="bg-green-500/10 border border-green-500/20 rounded-2xl p-6">
-                  <h3 className="text-xl font-bold text-green-400 mb-4 flex items-center gap-2">
-                    <Lightbulb size={20} /> Growth Opportunities
-                  </h3>
-                  <div className="space-y-3">
-                    {insights.opportunities.map((opp, idx) => (
-                      <div key={idx} className="bg-black/30 rounded-lg p-4">
-                        <div className="flex justify-between mb-2">
-                          <span className="font-semibold capitalize">{opp.type.replace(/_/g, ' ')}</span>
-                          <span className={`text-xs px-2 py-1 rounded capitalize ${
-                            opp.potential === 'high' ? 'bg-green-600' : 'bg-blue-600'
-                          }`}>
-                            {opp.potential} potential
-                          </span>
-                        </div>
-                        <p className="text-gray-400 text-sm">{opp.description}</p>
-                        <p className="text-green-400 text-xs mt-2">→ {opp.action}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* RECOMMENDATIONS */}
-              {insights.recommendations && insights.recommendations.length > 0 && (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-6">
-                  <h3 className="text-xl font-bold text-blue-400 mb-4 flex items-center gap-2">
-                    <Target size={20} /> Strategic Recommendations
-                  </h3>
-                  <div className="space-y-3">
-                    {insights.recommendations.map((rec, idx) => (
-                      <div key={idx} className="bg-black/30 rounded-lg p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="font-semibold">{rec.action}</span>
-                          <span className={`text-xs px-2 py-1 rounded capitalize ${
-                            rec.priority === 'high' ? 'bg-red-600' :
-                            rec.priority === 'medium' ? 'bg-yellow-600' : 'bg-blue-600'
-                          }`}>
-                            {rec.priority}
-                          </span>
-                        </div>
-                        <p className="text-gray-400 text-sm">{rec.details}</p>
-                        <div className="flex gap-4 text-xs text-gray-500 mt-2">
-                          <span>⏱️ {rec.timeline}</span>
-                          <span>👤 {rec.owner}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* TAB: COMMENTS */}
-          {activeTab === 'comments' && analysis.status === 'completed' && (
-            <motion.div
-              key="comments"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
-            >
-              {/* CATEGORY SELECTOR */}
-              <div className="flex gap-3 flex-wrap">
-                {[
-                  { id: 'positive', label: '👍 Positive', color: 'green' },
-                  { id: 'negative', label: '👎 Negative', color: 'red' },
-                  { id: 'neutral', label: '➡️ Neutral', color: 'gray' },
-                ].map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => { setSelectedCategory(cat.id); setSearchFilter(''); }}
-                    className={`px-4 py-2 rounded-lg font-medium transition ${
-                      selectedCategory === cat.id
-                        ? `bg-${cat.color}-600`
-                        : `bg-${cat.color}-500/20 border border-${cat.color}-500/30 hover:bg-${cat.color}-500/30`
-                    }`}
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* SEARCH FILTER */}
-              <div className="relative">
-                <Filter className="absolute left-3 top-3 text-gray-500" size={20} />
-                <input
-                  type="text"
-                  placeholder="Search comments..."
-                  value={searchFilter}
-                  onChange={(e) => setSearchFilter(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg pl-10 pr-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400"
-                />
-              </div>
-
-              {/* COMMENTS LIST */}
-              <div className="space-y-3">
-                {filteredComments.length > 0 ? (
-                  filteredComments.map((comment, idx) => (
-                    <motion.div
-                      key={idx}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: idx * 0.05 }}
-                      className={`border rounded-lg p-4 ${getSentimentColor(comment.sentiment)}`}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <p className="text-gray-200 flex-1">{comment.text}</p>
-                        <span className={`text-xs px-2 py-1 rounded-full ml-2 whitespace-nowrap ${getConfidenceColor(comment.confidence)} font-semibold`}>
-                          {(comment.confidence * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      {comment.keywords.length > 0 && (
-                        <div className="flex gap-2 flex-wrap mt-2">
-                          {comment.keywords.map((kw, i) => (
-                            <span key={i} className="text-xs bg-black/20 px-2 py-1 rounded text-gray-300">
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </motion.div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    No comments found in this category
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {/* TAB: QUALITY METRICS */}
-          {activeTab === 'quality' && analysis.status === 'completed' && (
-            <motion.div
-              key="quality"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                  { label: 'Very High Confidence', count: summary.confidence_distribution?.very_high || 0, color: 'green' },
-                  { label: 'High Confidence', count: summary.confidence_distribution?.high || 0, color: 'blue' },
-                  { label: 'Medium Confidence', count: summary.confidence_distribution?.medium || 0, color: 'yellow' },
-                  { label: 'Low Confidence', count: summary.confidence_distribution?.low || 0, color: 'red' },
-                ].map((item, idx) => (
-                  <div key={idx} className={`bg-${item.color}-500/10 border border-${item.color}-500/20 rounded-lg p-4`}>
-                    <p className={`text-${item.color}-400 font-semibold`}>{item.label}</p>
-                    <p className="text-2xl font-bold text-white mt-2">{item.count}</p>
-                    <p className="text-gray-500 text-xs mt-1">
-                      {summary.total_comments ? ((item.count / summary.total_comments) * 100).toFixed(1) : 0}% of total
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+            {item.impact && <p className="text-xs text-gray-500 mt-1">{item.impact}</p>}
+            {item.timeline && <p className="text-xs text-gray-500 mt-1">⏱ {item.timeline} · {item.owner}</p>}
+          </div>
+        ))}
       </div>
     </div>
   );
-};
+}
 
-export default AnalysisDashboard;
+// ─── Main Component ───────────────────────────────────────────
+
+export default function AnalysisDashboard() {
+  const { id }     = useParams();
+  const navigate   = useNavigate();
+  const [data,     setData]     = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [polling,  setPolling]  = useState(true);
+  const [tab,      setTab]      = useState('overview');    // overview | comments | insights
+  const [commCat,  setCommCat]  = useState('positive');
+
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/analysis/${id}`, { timeout: 15000 });
+      setData(res.data);
+      if (['completed', 'failed'].includes(res.data.status)) setPolling(false);
+    } catch (err) {
+      if (err.response?.status === 404) {
+        toast.error('Không tìm thấy phân tích'); setPolling(false);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchData();
+    if (!polling) return;
+    const iv = setInterval(() => { if (polling) fetchData(); }, 2500);
+    return () => clearInterval(iv);
+  }, [fetchData, polling]);
+
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center py-32 gap-4">
+      <BrainCircuit size={40} className="text-emerald-400 animate-spin" />
+      <p className="text-gray-300 text-sm">Đang tải kết quả phân tích...</p>
+    </div>
+  );
+
+  if (!data) return (
+    <div className="text-center py-32">
+      <AlertCircle size={40} className="mx-auto text-red-400 mb-4" />
+      <p className="text-red-300">Không tìm thấy phân tích. <a href="/" className="underline text-blue-400">Quay về</a></p>
+    </div>
+  );
+
+  const s  = data.summary;
+  const ins = data.insights || {};
+
+  // Pie chart data
+  const pieData = s ? [
+    { name: 'Tích cực', value: s.positive, color: COLORS.positive },
+    { name: 'Tiêu cực', value: s.negative, color: COLORS.negative },
+    { name: 'Trung lập', value: s.neutral,  color: COLORS.neutral  },
+  ].filter(d => d.value > 0) : [];
+
+  const confDist = s?.confidence_distribution
+    ? Object.entries(s.confidence_distribution).map(([k, v]) => ({ name: k, value: v }))
+    : [];
+
+  const tabs = ['overview', 'comments', 'insights'];
+  const tabLabels = { overview: '📊 Tổng quan', comments: '💬 Bình luận', insights: '💡 Insights' };
+
+  return (
+    <div className="max-w-5xl mx-auto">
+
+      {/* Back + Status bar */}
+      <div className="flex items-center gap-3 mb-6">
+        <button onClick={() => navigate('/')} className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition">
+          <ArrowLeft size={18} />
+        </button>
+        <div className="flex-1 min-w-0">
+          <p className="text-gray-400 text-xs truncate">{data.url}</p>
+          <div className="flex items-center gap-3 mt-1">
+            <StatusBadge status={data.status} />
+            {data.processing_time && (
+              <span className="text-gray-500 text-xs">⏱ {data.processing_time}s</span>
+            )}
+            {s?.ai_engine && (
+              <span className="text-purple-400 text-xs">🤖 {s.ai_engine}</span>
+            )}
+          </div>
+        </div>
+        {data.status === 'processing' && (
+          <RefreshCw size={16} className="text-blue-400 animate-spin shrink-0" />
+        )}
+      </div>
+
+      {/* Error */}
+      {data.status === 'failed' && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6 text-red-300 text-sm">
+          <AlertCircle size={16} className="inline mr-2" />{data.error}
+        </div>
+      )}
+
+      {/* Processing message */}
+      {data.status === 'processing' && (
+        <motion.div
+          animate={{ opacity: [0.6, 1, 0.6] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-6 mb-6 text-center"
+        >
+          <BrainCircuit size={32} className="mx-auto text-blue-400 mb-3 animate-spin" />
+          <p className="text-blue-300 font-semibold">Groq LLaMA 3.3 70B đang phân tích...</p>
+          <p className="text-gray-400 text-xs mt-1">Xử lý từng bình luận với AI chuyên nghiệp</p>
+        </motion.div>
+      )}
+
+      {/* Tabs */}
+      {data.status === 'completed' && s && (
+        <>
+          <div className="flex gap-2 mb-6">
+            {tabs.map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-4 py-2 rounded-xl text-sm font-semibold transition ${
+                  tab === t
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}>
+                {tabLabels[t]}
+              </button>
+            ))}
+          </div>
+
+          {/* ── OVERVIEW TAB ── */}
+          {tab === 'overview' && (
+            <div className="space-y-5">
+
+              {/* Executive summary */}
+              {ins.executive_summary && (
+                <div className="bg-gradient-to-r from-emerald-900/40 to-teal-900/40 border border-emerald-500/20 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-emerald-300 mb-1">📋 Tóm tắt điều hành</p>
+                  <p className="text-gray-200 text-sm">{ins.executive_summary}</p>
+                </div>
+              )}
+
+              {/* KPI row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Tổng bình luận', value: s.total_comments, icon: '📝', color: 'text-white' },
+                  { label: 'Tích cực',        value: `${s.positive_pct}%`, icon: '😊', color: 'text-emerald-400' },
+                  { label: 'Tiêu cực',        value: `${s.negative_pct}%`, icon: '😤', color: 'text-red-400' },
+                  { label: 'Độ tin cậy',      value: `${(s.average_confidence * 100).toFixed(0)}%`, icon: '🎯', color: 'text-blue-400' },
+                ].map(k => (
+                  <div key={k.label} className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+                    <div className="text-2xl mb-1">{k.icon}</div>
+                    <div className={`text-xl font-extrabold ${k.color}`}>{k.value}</div>
+                    <div className="text-gray-400 text-xs mt-0.5">{k.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Charts */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Pie */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-gray-300 mb-3">Phân bố Sentiment</p>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <PieChart>
+                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={75} dataKey="value">
+                        {pieData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                      </Pie>
+                      <Tooltip formatter={(v, n) => [v, n]} contentStyle={{ background: '#1e293b', border: 'none', borderRadius: 8 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex justify-center gap-4 mt-2">
+                    {pieData.map(d => (
+                      <span key={d.name} className="flex items-center gap-1 text-xs text-gray-400">
+                        <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: d.color }} />
+                        {d.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Confidence bar */}
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-gray-300 mb-3">Phân bố Độ tin cậy</p>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={confDist} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                      <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                      <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                      <Tooltip contentStyle={{ background: '#1e293b', border: 'none', borderRadius: 8 }} />
+                      <Bar dataKey="value" fill="#10b981" radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Sentiment meters */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                <p className="text-sm font-semibold text-gray-300 mb-4">Chỉ số Sentiment</p>
+                <SentimentMeter
+                  positive_pct={s.positive_pct}
+                  negative_pct={s.negative_pct}
+                  neutral_pct={s.neutral_pct}
+                />
+              </div>
+
+              {/* Risk / Opportunity scores */}
+              {(ins.risk_score !== undefined || ins.opportunity_score !== undefined) && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-center">
+                    <Shield size={20} className="mx-auto text-red-400 mb-1" />
+                    <div className="text-2xl font-extrabold text-red-400">{ins.risk_score}</div>
+                    <div className="text-gray-400 text-xs">Điểm Rủi ro / 100</div>
+                  </div>
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 text-center">
+                    <Target size={20} className="mx-auto text-emerald-400 mb-1" />
+                    <div className="text-2xl font-extrabold text-emerald-400">{ins.opportunity_score}</div>
+                    <div className="text-gray-400 text-xs">Cơ hội / 100</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── COMMENTS TAB ── */}
+          {tab === 'comments' && (
+            <div>
+              <div className="flex gap-2 mb-4">
+                {['positive','negative','neutral'].map(cat => {
+                  const count = data.comments?.[cat]?.length || 0;
+                  const colors = {
+                    positive: 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300',
+                    negative: 'bg-red-500/20 border-red-500/30 text-red-300',
+                    neutral:  'bg-gray-500/20 border-gray-500/30 text-gray-300',
+                  };
+                  return (
+                    <button key={cat} onClick={() => setCommCat(cat)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                        commCat === cat ? colors[cat] : 'text-gray-500 border-transparent hover:bg-white/5'
+                      }`}>
+                      {{positive:'😊 Tích cực',negative:'😤 Tiêu cực',neutral:'😐 Trung lập'}[cat]} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+                {(data.comments?.[commCat] || []).length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-10">Không có bình luận trong danh mục này</p>
+                ) : (
+                  (data.comments[commCat] || []).map((c, i) => (
+                    <CommentCard key={c.id || i} comment={c} idx={i} />
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── INSIGHTS TAB ── */}
+          {tab === 'insights' && (
+            <div className="space-y-4">
+              <InsightCard
+                icon={Shield}
+                title="⚠️ Rủi ro phát hiện"
+                items={ins.risks}
+                color="border-red-500/20 bg-red-500/5"
+              />
+              <InsightCard
+                icon={TrendingUp}
+                title="🚀 Cơ hội tiềm năng"
+                items={ins.opportunities}
+                color="border-emerald-500/20 bg-emerald-500/5"
+              />
+              <InsightCard
+                icon={Lightbulb}
+                title="📋 Khuyến nghị chiến lược"
+                items={ins.recommendations}
+                color="border-blue-500/20 bg-blue-500/5"
+              />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
