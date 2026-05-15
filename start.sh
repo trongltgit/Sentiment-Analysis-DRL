@@ -1,35 +1,27 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starting AI Sentiment Analysis Service..."
+echo "🚀 Professional Financial Sentiment Analysis v2.0"
+echo "🤖 AI Engine: Groq LLaMA 3.3 70B (FREE)"
+echo "📈 Market Data: yfinance + Open Exchange Rates + RSS"
 
-# ✅ Lấy PORT từ environment (Render sẽ set)
 PORT=${PORT:-10000}
-echo "🔧 PORT from env: $PORT"
+echo "🔧 PORT: $PORT"
 
-# ============================================
-# Kiểm tra frontend build
-# ============================================
-echo "📁 Checking /usr/share/nginx/html/ ..."
-if [ -d "/usr/share/nginx/html" ]; then
-    ls -la /usr/share/nginx/html/
-    if [ -f "/usr/share/nginx/html/index.html" ]; then
-        echo "✅ index.html EXISTS ($(wc -c < /usr/share/nginx/html/index.html) bytes)"
-    else
-        echo "❌ index.html NOT FOUND"
-        exit 1
-    fi
+# Check frontend
+if [ -f "/usr/share/nginx/html/index.html" ]; then
+    echo "✅ Frontend: OK ($(wc -c < /usr/share/nginx/html/index.html) bytes)"
 else
-    echo "❌ Directory /usr/share/nginx/html does NOT exist"
+    echo "❌ Frontend index.html NOT FOUND"
     exit 1
 fi
 
-# ============================================
-# Start FastAPI (serve cả API và static files)
-# ============================================
-echo "🌐 Starting FastAPI on port ${PORT}..."
-cd /app
-export PYTHONUNBUFFERED=1
+# Check GROQ_API_KEY
+if [ -z "$GROQ_API_KEY" ]; then
+    echo "⚠️  GROQ_API_KEY not set — will use VADER fallback"
+else
+    echo "✅ GROQ_API_KEY configured"
+fi
 
 # Pre-check imports
 python -c "
@@ -38,18 +30,25 @@ sys.path.insert(0, '/app')
 sys.path.insert(0, '/app/backend')
 try:
     from backend.main import app
-    from backend.app.config import settings
     print('✅ FastAPI app import OK')
+    from backend.app.services.sentiment_analyzer import ProfessionalSentimentAnalyzer
+    print('✅ Sentiment analyzer import OK')
+    from backend.app.services.financial_data import fetch_vn_stocks
+    print('✅ Financial data service import OK')
 except Exception as e:
     print(f'❌ Import error: {e}')
-    import traceback
-    traceback.print_exc()
+    import traceback; traceback.print_exc()
     sys.exit(1)
 " || exit 1
 
-# Giới hạn thread để tiết kiệm RAM
 export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
 
-# ✅ Start uvicorn trên 0.0.0.0 để Render có thể truy cập
-uvicorn backend.main:app --host 0.0.0.0 --port ${PORT} --workers 1 --log-level info
+echo ""
+echo "🌐 Starting FastAPI on 0.0.0.0:${PORT}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+uvicorn backend.main:app \
+    --host 0.0.0.0 \
+    --port ${PORT} \
+    --workers 1 \
+    --log-level info
