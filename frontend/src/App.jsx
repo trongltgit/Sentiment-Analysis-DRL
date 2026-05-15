@@ -1,24 +1,32 @@
-// App.jsx v2.0 — Professional Financial Sentiment Analysis
+// App.jsx v3.0 — Enhanced with Multi-Bank Comparison
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
-import URLInput from './components/URLInput';
+import MultiURLInput from './components/MultiURLInput';
 import AnalysisDashboard from './components/AnalysisDashboard';
+import ComparisonDashboard from './components/ComparisonDashboard';
 import FinancialMarket from './components/FinancialMarket';
 import './styles.css';
 
 function Home() {
   const navigate = useNavigate();
-  const handleStart = (data) => {
-    const jobId = data?.id;
-    if (jobId) navigate('/analysis/' + jobId);
+
+  const handleAnalysisStart = (data) => {
+    // Single URL analysis
+    if (!Array.isArray(data)) {
+      const jobId = data?.id;
+      if (jobId) navigate('/analysis/' + jobId);
+    } else {
+      // Multiple URLs comparison
+      navigate('/comparison', { state: { analyses: data } });
+    }
   };
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 items-start justify-center">
       {/* Input panel */}
       <div className="flex-1 max-w-2xl w-full">
-        <URLInput onAnalysisStart={handleStart} />
+        <MultiURLInput onAnalysisStart={handleAnalysisStart} />
       </div>
 
       {/* Market sidebar */}
@@ -42,14 +50,17 @@ export default function App() {
               <span className="font-bold text-lg bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
                 FinSentiment AI
               </span>
-              <span className="text-gray-500 text-xs hidden sm:block">Powered by Groq LLaMA 3.3 70B</span>
+              <span className="text-gray-500 text-xs hidden sm:block">v3.0 Multi-Bank</span>
             </a>
             <div className="flex items-center gap-3 text-xs text-gray-400">
               <span className="px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400">
                 🤖 Groq Free
               </span>
               <span className="px-2 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full text-blue-400">
-                📈 yfinance
+                📊 Multi-Compare
+              </span>
+              <span className="px-2 py-1 bg-purple-500/10 border border-purple-500/20 rounded-full text-purple-400">
+                📈 Strategy AI
               </span>
             </div>
           </div>
@@ -60,6 +71,7 @@ export default function App() {
           <Routes>
             <Route path="/"             element={<Home />} />
             <Route path="/analysis/:id" element={<AnalysisDashboard />} />
+            <Route path="/comparison"   element={<ComparisonDashboard />} />
           </Routes>
         </main>
 
