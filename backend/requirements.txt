@@ -1,41 +1,37 @@
-# Professional Sentiment Analysis System - Requirements
-# Version: 4.0.0
+# ============================================================
+# Professional Financial Sentiment Analysis v2.0
+# AI Engine: Groq API (FREE) — LLaMA 3.3 70B
+# Market Data: yfinance + Open Exchange Rates (FREE)
+# ============================================================
 
 # Core Web Framework
 fastapi==0.104.1
-uvicorn==0.24.0
+uvicorn[standard]==0.24.0
 pydantic==2.4.2
 pydantic-settings==2.0.3
 python-multipart==0.0.6
 
-# Deep Learning & NLP
-torch==2.0.1
-transformers==4.35.2
-numpy==1.24.3
-scikit-learn==1.3.0
-
-# Data Processing
-pandas==2.1.1
-python-dateutil==2.8.2
-
-# Async & Concurrency
+# HTTP & Async
 aiofiles==23.2.1
 httpx==0.25.0
-
-# Utilities
 requests==2.31.0
 python-dotenv==1.0.0
-python-jose==3.3.0
-passlib==1.7.4
 
-# Optional: Production Features
-# slowapi==0.1.9
-# redis==5.0.1
-# sqlalchemy==2.0.23
-# psycopg2-binary==2.9.9
+# AI Engine: Groq (FREE LLaMA 70B)
+groq==0.9.0
 
-# Development
-pytest==7.4.3
-pytest-asyncio==0.21.1
-black==23.12.0
-flake8==6.1.0
+# NLP Fallback (lightweight, no GPU needed)
+vaderSentiment==3.3.2
+
+# Financial Data (ALL FREE, no API key needed)
+yfinance==0.2.36
+feedparser==6.0.10
+
+# Data Processing
+pandas==2.1.3
+numpy==1.26.0
+python-dateutil==2.8.2
+
+# Web Scraping
+beautifulsoup4==4.12.2
+lxml==4.9.3
