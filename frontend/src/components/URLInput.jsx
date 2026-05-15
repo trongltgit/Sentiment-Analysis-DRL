@@ -1,66 +1,47 @@
-// File: frontend/src/components/URLInput.jsx
+// URLInput.jsx v2.0
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Loader2, Landmark } from 'lucide-react';
+import { Search, Loader2, Landmark, ShoppingCart, Globe, Facebook } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const URLInput = ({ onAnalysisStart }) => {
+const EXAMPLES = [
+  { url: 'https://www.facebook.com/VietinBank/',    label: 'VietinBank FB' },
+  { url: 'https://www.vietcombank.com.vn',          label: 'Vietcombank' },
+  { url: 'https://www.techcombank.com.vn',          label: 'Techcombank' },
+  { url: 'https://www.facebook.com/MBBankofficial', label: 'MB Bank FB' },
+  { url: 'https://shopee.vn',                       label: 'Shopee' },
+];
+
+function detectPlatform(url) {
+  const u = url.toLowerCase();
+  if (['vietcombank','techcombank','mbbank','bidv','acb','vietinbank','vpbank','hdbank'].some(b => u.includes(b)))
+    return { name: 'Ngân hàng', Icon: Landmark, color: 'bg-emerald-600 text-white' };
+  if (['shopee.vn','lazada.vn','tiki.vn'].some(s => u.includes(s)))
+    return { name: 'E-Commerce', Icon: ShoppingCart, color: 'bg-orange-500 text-white' };
+  if (u.includes('facebook.com'))
+    return { name: 'Facebook', Icon: Facebook, color: 'bg-blue-600 text-white' };
+  return { name: 'Website', Icon: Globe, color: 'bg-slate-600 text-white' };
+}
+
+export default function URLInput({ onAnalysisStart }) {
   const [url,     setUrl]     = useState('');
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
 
-  const detectPlatform = (u) => {
-    const lower = u.toLowerCase();
-    if (['vietcombank','techcombank','mbbank','bidv','acb','vietinbank'].some(b => lower.includes(b)))
-      return { name: 'Ngân hàng', icon: <Landmark className="h-4 w-4" />, color: 'bg-emerald-600' };
-    if (['shopee.vn','lazada.vn','tiki.vn'].some(s => lower.includes(s)))
-      return { name: 'E-Commerce', icon: '🛒', color: 'bg-orange-500' };
-    if (lower.includes('facebook.com'))
-      return { name: 'Facebook', icon: '📘', color: 'bg-blue-600' };
-    return { name: 'Website', icon: '🌐', color: 'bg-gray-600' };
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!url.trim()) return;
-
     setLoading(true);
     setError('');
-
     try {
-      console.log('📤 Gửi request phân tích:', url.trim());
-
-      const response = await axios.post('/api/v1/analyze', {
-        url:          url.trim(),
-        max_comments: 100,
-      });
-
-      const data = response.data;
-      console.log('📥 Response từ server:', data);
-
-      const jobId = data?.id;
-      if (!jobId) {
-        throw new Error('Server không trả về job id: ' + JSON.stringify(data));
-      }
-
-      console.log('🎯 Job ID nhận được:', jobId);
-
-      // Gọi callback (App.jsx sẽ navigate)
-      if (typeof onAnalysisStart === 'function') {
-        console.log('📞 Gọi onAnalysisStart...');
-        onAnalysisStart(data);
-      } else {
-        // Fallback: navigate bằng window nếu callback không hoạt động
-        console.warn('⚠️ onAnalysisStart không phải function, dùng window.location');
-        window.location.href = `/analysis/${jobId}`;
-      }
-
+      const { data } = await axios.post('/api/v1/analyze', { url: url.trim(), max_comments: 100 });
+      if (!data?.id) throw new Error('Không nhận được job ID từ server');
+      onAnalysisStart?.(data);
     } catch (err) {
-      console.error('❌ Lỗi submit:', err);
-      const msg = err.response?.data?.detail || err.message || 'Không thể phân tích link này.';
+      const msg = err.response?.data?.detail || err.message || 'Lỗi phân tích';
       setError(msg);
-      toast.error(msg, { duration: 4000 });
+      toast.error(msg, { duration: 5000 });
     } finally {
       setLoading(false);
     }
@@ -70,76 +51,90 @@ const URLInput = ({ onAnalysisStart }) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full max-w-2xl mx-auto mt-10"
+      transition={{ duration: 0.5 }}
+      className="w-full"
     >
-      <div className="bg-white/10 backdrop-blur-md rounded-2xl p-8 border border-white/20">
-        <h2 className="text-2xl font-bold text-white mb-2 text-center">
-          🏛️ Phân tích Cảm xúc Ngân hàng &amp; Công ty
-        </h2>
-        <p className="text-gray-400 text-sm text-center mb-6">
-          Dán link website để AI phân tích tích cực / tiêu cực / trung lập
+      {/* Hero */}
+      <div className="text-center mb-8">
+        <h1 className="text-3xl sm:text-4xl font-extrabold text-white mb-3">
+          🏦 Phân tích Sentiment{' '}
+          <span className="bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
+            Tài chính AI
+          </span>
+        </h1>
+        <p className="text-gray-400 text-sm max-w-lg mx-auto">
+          Dùng <strong className="text-emerald-400">Groq LLaMA 3.3 70B</strong> để phân tích cảm xúc
+          khách hàng ngân hàng, fintech, bảo hiểm — cấp độ chuyên nghiệp quốc tế
         </p>
+      </div>
 
+      {/* Input card */}
+      <div className="bg-white/8 backdrop-blur-md rounded-2xl p-6 border border-white/15 shadow-2xl">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
             <input
               type="text"
               value={url}
               onChange={(e) => { setUrl(e.target.value); setError(''); }}
-              placeholder="https://www.facebook.com/VietinBank/ ..."
-              className="w-full pl-6 pr-36 py-4 bg-black/20 border border-white/10 rounded-xl text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-emerald-500 transition"
+              placeholder="https://www.vietcombank.com.vn  hoặc  facebook.com/VietinBank/"
+              className="w-full pl-4 pr-36 py-4 bg-black/25 border border-white/15 rounded-xl text-white text-sm placeholder-gray-500 outline-none focus:ring-2 focus:ring-emerald-500 transition"
             />
             {platform && (
-              <div className={`absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1 rounded-full ${platform.color} text-white text-xs flex items-center gap-1.5`}>
-                {platform.icon}
-                <span>{platform.name}</span>
+              <div className={`absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-full ${platform.color} text-xs flex items-center gap-1.5 font-medium`}>
+                <platform.Icon size={12} />
+                {platform.name}
               </div>
             )}
           </div>
 
-          <p className="text-gray-500 text-xs text-center">
-            💡 Tối ưu cho: Website Ngân hàng, E-commerce, Facebook Page
-          </p>
-
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-300 text-sm">
-              {error}
+              ⚠️ {error}
             </div>
           )}
 
           <button
             type="submit"
             disabled={loading || !url.trim()}
-            className="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-2"
+            className="w-full py-4 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex justify-center items-center gap-2 shadow-lg"
           >
             {loading
-              ? <><Loader2 className="animate-spin" size={20} /> Đang phân tích...</>
-              : <><Search size={20} /> Bắt đầu phân tích AI</>
+              ? <><Loader2 className="animate-spin" size={18} /> Đang phân tích với Groq AI...</>
+              : <><Search size={18} /> Phân tích Sentiment AI</>
             }
           </button>
         </form>
+
+        {/* Features row */}
+        <div className="mt-5 grid grid-cols-3 gap-3 text-center">
+          {[
+            { icon: '🤖', label: 'Groq LLaMA 70B', sub: 'Deep Learning' },
+            { icon: '🇻🇳', label: 'Tiếng Việt', sub: 'Vietnamese AI' },
+            { icon: '⚡', label: '< 30 giây', sub: 'Siêu nhanh' },
+          ].map(f => (
+            <div key={f.label} className="bg-white/5 rounded-xl p-2.5">
+              <div className="text-xl mb-1">{f.icon}</div>
+              <div className="text-white text-xs font-semibold">{f.label}</div>
+              <div className="text-gray-500 text-xs">{f.sub}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Quick examples */}
       <div className="mt-4 flex flex-wrap gap-2 justify-center">
-        {[
-          'https://www.facebook.com/VietinBank/',
-          'https://www.vietcombank.com.vn',
-          'https://shopee.vn',
-        ].map((ex) => (
+        {EXAMPLES.map(ex => (
           <button
-            key={ex}
-            onClick={() => setUrl(ex)}
-            className="text-xs text-gray-400 hover:text-cyan-400 bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-full transition"
+            key={ex.url}
+            onClick={() => setUrl(ex.url)}
+            className="text-xs text-gray-400 hover:text-emerald-400 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-emerald-500/30 px-3 py-1.5 rounded-full transition"
           >
-            {ex}
+            {ex.label}
           </button>
         ))}
       </div>
     </motion.div>
   );
-};
-
-export default URLInput;
+}
