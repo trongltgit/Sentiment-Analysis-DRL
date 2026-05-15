@@ -1,7 +1,8 @@
 """
-Sentiment Analysis with Deep Reinforcement Learning
+Professional Financial Sentiment Analysis System v2.0
+Powered by Deep Learning + Real-time Market Data
 """
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 
-# Export Celery app
-from app.celery_app import celery_app
+# ✅ FIX: Celery removed — using FastAPI BackgroundTasks instead
+# No Redis/Celery needed for Render deployment
