@@ -1,16 +1,17 @@
-# File: render.yaml
+# render.yaml — Professional Financial Sentiment Analysis v2.0
 services:
   - type: web
-    name: sentiment-analysis-drl
+    name: finsentiment-ai
     runtime: docker
     plan: standard
     region: singapore
     healthCheckPath: /api/v1/health
-    # ✅ Truyền CACHEBUST từ Render env → Docker ARG → buộc rebuild
     dockerBuildArgs:
-      - CACHEBUST=10
+      - CACHEBUST=20
     envVars:
       - key: PORT
         value: "10000"
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: GROQ_API_KEY_DRL
+        sync: false   # Set manually in Render dashboard (free key from console.groq.com)
