@@ -103,7 +103,7 @@ def api_root():
 
 @app.get("/api/v1/health")
 def health():
-    groq_key = os.getenv("GROQ_API_KEY", "")
+    groq_key = os.getenv("GROQ_API_KEY_DRL", "")
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
