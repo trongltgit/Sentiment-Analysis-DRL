@@ -4,7 +4,7 @@ import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-route
 import { Toaster } from 'react-hot-toast';
 import MultiURLInput from './components/MultiURLInput';
 import AnalysisDashboard from './components/AnalysisDashboard';
-import ComparisonDashboard from './components/ComparisonDashboard';
+import ComparisonDashboard from './components/ComparisonDashboard_Enhanced';
 import FinancialMarket from './components/FinancialMarket';
 import './styles.css';
 
