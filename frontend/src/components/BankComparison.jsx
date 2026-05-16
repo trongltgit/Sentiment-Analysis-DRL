@@ -109,16 +109,19 @@ function BankCard({ bank, data, rank, totalBanks, onClick }) {
 export default function BankComparison({ analyses, onSelectBank }) {
   const [sortBy, setSortBy] = useState('positive');
 
-  const banksData = useMemo(() => analyses.map(a => ({
-    id:         a.id,
-    bank:       a.bank,
-    data:       a,
-    positive:   a.summary.positive_pct,
-    negative:   a.summary.negative_pct,
-    neutral:    a.summary.neutral_pct,
-    confidence: a.summary.average_confidence * 100,
-    total:      a.summary.total_comments,
-  })), [analyses]);
+  const banksData = useMemo(() => analyses
+    // Guard: skip any entry whose summary is incomplete (e.g. still null during polling)
+    .filter(a => a.summary && a.summary.positive_pct != null)
+    .map(a => ({
+      id:         a.id,
+      bank:       a.bank,
+      data:       a,
+      positive:   a.summary.positive_pct,
+      negative:   a.summary.negative_pct,
+      neutral:    a.summary.neutral_pct,
+      confidence: (a.summary.average_confidence ?? 0) * 100,
+      total:      a.summary.total_comments,
+    })), [analyses]);
 
   const sortedBanks = useMemo(() => {
     const copy = [...banksData];
