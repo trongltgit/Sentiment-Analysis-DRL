@@ -46,47 +46,44 @@ RSS_FEEDS = [
 
 
 async def fetch_vn_stocks() -> List[Dict]:
-    """Lấy giá cổ phiếu ngân hàng Việt Nam qua yfinance"""
+    """Lấy giá cổ phiếu ngân hàng Việt Nam qua yfinance (per-ticker để tránh JSONDecodeError)"""
     try:
         import yfinance as yf
-        tickers = list(VN_BANK_STOCKS.keys())
         results = []
-
         loop = asyncio.get_event_loop()
-
-        def _download():
-            data = yf.download(
-                tickers,
-                period="2d",
-                interval="1d",
-                progress=False,
-                auto_adjust=True,
-            )
-            return data
-
-        data = await loop.run_in_executor(None, _download)
 
         for ticker, name in VN_BANK_STOCKS.items():
             try:
-                closes = data["Close"][ticker].dropna()
+                def _download(t=ticker):
+                    # Per-ticker download — more reliable than bulk for .VN symbols
+                    tk = yf.Ticker(t)
+                    hist = tk.history(period="5d", interval="1d", auto_adjust=True)
+                    return hist
+
+                hist = await loop.run_in_executor(None, _download)
+                closes = hist["Close"].dropna()
                 if len(closes) < 2:
                     continue
-                price_today    = float(closes.iloc[-1])
+                price_today     = float(closes.iloc[-1])
                 price_yesterday = float(closes.iloc[-2])
-                change_pct     = (price_today - price_yesterday) / price_yesterday * 100
-
+                change_pct      = (price_today - price_yesterday) / price_yesterday * 100
                 results.append({
                     "ticker": ticker.replace(".VN", ""),
                     "name":   name,
-                    "price":  round(price_today / 1000, 1),   # VND nghìn đồng
+                    "price":  round(price_today / 1000, 1),
                     "change": round(change_pct, 2),
                     "trend":  "up" if change_pct >= 0 else "down",
                 })
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Skip {ticker}: {e}")
                 continue
 
-        logger.info(f"✅ Fetched {len(results)} VN bank stocks")
-        return results
+        if results:
+            logger.info(f"✅ Fetched {len(results)} VN bank stocks")
+            return results
+
+        logger.warning("All yfinance tickers failed, using mock data")
+        return _mock_vn_stocks()
 
     except Exception as e:
         logger.warning(f"yfinance error: {e}")
