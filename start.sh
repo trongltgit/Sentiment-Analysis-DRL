@@ -17,10 +17,10 @@ else
 fi
 
 # Check GROQ_API_KEY
-if [ -z "$GROQ_API_KEY" ]; then
-    echo "⚠️  GROQ_API_KEY not set — will use VADER fallback"
+if [ -z "$GROQ_API_KEY_DRL" ]; then
+    echo "⚠️  GROQ_API_KEY_DRL not set — will use VADER fallback"
 else
-    echo "✅ GROQ_API_KEY configured"
+    echo "✅ GROQ_API_KEY_DRL configured"
 fi
 
 # Pre-check imports
